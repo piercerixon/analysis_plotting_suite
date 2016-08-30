@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog
+from itertools import islice
 import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -9,9 +10,13 @@ import pandas as pd
 import seaborn as sns
 import sys
 import cProfile, pstats, io
+import copy
 
 __author__ = 'Pierce Rixon'
 select = 1
+
+null = None
+
 
 def main():
     #ws='whitespace'
@@ -27,7 +32,8 @@ def main():
     root.withdraw()
     filename = filedialog.askopenfilename() #('Window_dump.csv')
 
-    analyse(filename,select)
+    #analyse(filename,select) #For analysis package
+    dev_sim(filename) #For device simulator
     #legacy_sns(filename)
 
 def analyse(filename,test):
@@ -45,6 +51,7 @@ def analyse(filename,test):
     
     nbins = 131072
 
+   
     if(test == 1):
         #1. BW vs TS density plot, with TS and BW histograms/KDEs on the top and right hand side of the density plot
 
@@ -88,8 +95,10 @@ def analyse(filename,test):
 
         ax.set_yscale('log')
         ax.set_xscale('log')
+        ax.set_ylim(1,1e5)
         ax2.set_yscale('log')
         ax2.set_xscale('log')
+        ax2.set_ylim(1,1e5)
         #ax.set_xlim(0,pxls)
         #ax.set_ylim(0,pxls)
 
@@ -237,7 +246,7 @@ def analyse(filename,test):
         d2comp = np.array([compws,relws])
         d2comp[d2comp[:,0].argsort()]
 
-        if True:
+        if False:
             figz = plt.figure()
         
             axz = figz.add_subplot(2,1,1)
@@ -254,68 +263,93 @@ def analyse(filename,test):
 
             plt.show()
 
-        fig = plt.figure()
-        ax = fig.add_subplot(3,2,1)
-        ax2 = fig.add_subplot(3,2,3)
-        ax3 = fig.add_subplot(3,2,5)
-
-        axa = fig.add_subplot(3,2,2)
-        ax2a = fig.add_subplot(3,2,4)
-        ax3a = fig.add_subplot(3,2,6)
-    #2.1 Companion plot to WS vs Bins, - % covered vs Bins, showing the amount of real spectrum covered by the partitioned algo as a percentage
-
-        ax.scatter(freq,relws,edgecolor='')
-        ax2.scatter(freq,diffarry,edgecolor='')
-#        ax3.scatter(freq,compws,edgecolor='',label='Absolute Spectrum')
-        ax3.scatter(bw_1_dataset['frequency'],bw_1_dataset['timescale'],edgecolor='',label='Absolute Spectrum')
-        ax3.scatter(freq,relws,edgecolor='',c='r',label='Windowed Spectrum')
-
-        #CDFs?
-
-        relwsS = np.sort(relws)
-        diffarryS = np.sort(diffarry)
-        compwsS = np.sort(compws)     
-
-#        compwspad_r = np.resize(compwspad,(1,131072))
-#        compwsS = np.sort(compwspad_r)
-        relwsS = np.sort(relws)
-
-        axa.scatter(freq,relwsS[::-1],edgecolor='')
-        axa.set_title('Whitespace Frequency Distribution CCDF')
-        axa.set_xlabel('Descending Magnitude Ordered Bin Count')
-        axa.set_ylabel('Whitespace Units over Observation Period')
-        ax2a.scatter(freq,diffarryS[::-1],edgecolor='')
-        ax2a.set_title('Whitespace Frequency Distribution Difference CCDF')
-        ax2a.set_xlabel('Descending Magnitude Ordered Bin Count')
-        ax2a.set_ylabel('Whitespace Units Difference over Observation Period')
+        if True:
+            fig = plt.figure()
+            ax = fig.add_subplot(2,1,1)
+            axa = fig.add_subplot(2,1,2)
         
-        ax3a.set_title('Whitespace Frequency Distribution CCDF')
-        ax3a.set_xlabel('Descending Magnitude Ordered Bin Count')
-        ax3a.set_ylabel('Whitespace Units over Observation Period')
-        ax3a.scatter(freq,compwsS[::-1],edgecolor='',label='Absolute Spectrum')
+            ax.scatter(freq,relws,edgecolor='')
+
+            relwsS = np.sort(relws)
+
+            axa.scatter(freq,relwsS[::-1],edgecolor='')
+
+            axa.set_title('Whitespace Frequency Distribution CCDF')
+            axa.set_xlabel('Descending Magnitude Ordered Bin Count')
+            axa.set_ylabel('Whitespace Units over Observation Period')
+
+            ax.set_title('Whitespace Frequency Distribution')
+            ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax.set_ylabel('Whitespace Units')
+
+            plt.show()
+
+
+
+        if False:
+
+            fig = plt.figure()
+            ax = fig.add_subplot(3,2,1)
+            ax2 = fig.add_subplot(3,2,3)
+            ax3 = fig.add_subplot(3,2,5)
+
+            axa = fig.add_subplot(3,2,2)
+            ax2a = fig.add_subplot(3,2,4)
+            ax3a = fig.add_subplot(3,2,6)
+        #2.1 Companion plot to WS vs Bins, - % covered vs Bins, showing the amount of real spectrum covered by the partitioned algo as a percentage
+
+            ax.scatter(freq,relws,edgecolor='')
+            ax2.scatter(freq,diffarry,edgecolor='')
+    #        ax3.scatter(freq,compws,edgecolor='',label='Absolute Spectrum')
+            ax3.scatter(bw_1_dataset['frequency'],bw_1_dataset['timescale'],edgecolor='',label='Absolute Spectrum')
+            ax3.scatter(freq,relws,edgecolor='',c='r',label='Windowed Spectrum')
+
+            #CDFs?
+
+            relwsS = np.sort(relws)
+            diffarryS = np.sort(diffarry)
+            compwsS = np.sort(compws)     
+
+    #        compwspad_r = np.resize(compwspad,(1,131072))
+    #        compwsS = np.sort(compwspad_r)
+    #        relwsS = np.sort(relws)
+
+            axa.scatter(freq,relwsS[::-1],edgecolor='')
+            axa.set_title('Whitespace Frequency Distribution CCDF')
+            axa.set_xlabel('Descending Magnitude Ordered Bin Count')
+            axa.set_ylabel('Whitespace Units over Observation Period')
+            ax2a.scatter(freq,diffarryS[::-1],edgecolor='')
+            ax2a.set_title('Whitespace Frequency Distribution Difference CCDF')
+            ax2a.set_xlabel('Descending Magnitude Ordered Bin Count')
+            ax2a.set_ylabel('Whitespace Units Difference over Observation Period')
         
-#        ax3a.scatter(freq,compwsS[::-1],edgecolor='',label='Absolute Spectrum')
-        ax3a.scatter(freq,relwsS[::-1],edgecolor='',c='r',label='Windowed Spectrum')
-        ax3a.legend()
+            ax3a.set_title('Whitespace Frequency Distribution CCDF')
+            ax3a.set_xlabel('Descending Magnitude Ordered Bin Count')
+            ax3a.set_ylabel('Whitespace Units over Observation Period')
+            ax3a.scatter(freq,compwsS[::-1],edgecolor='',label='Absolute Spectrum')
+        
+    #        ax3a.scatter(freq,compwsS[::-1],edgecolor='',label='Absolute Spectrum')
+            ax3a.scatter(freq,relwsS[::-1],edgecolor='',c='r',label='Windowed Spectrum')
+            ax3a.legend()
 
-       # ax.set_yscale('log')
-       # ax.set_xscale('log')
-       # ax2.set_yscale('log')
-       # ax2.set_xscale('log')
+           # ax.set_yscale('log')
+           # ax.set_xscale('log')
+           # ax2.set_yscale('log')
+           # ax2.set_xscale('log')
 
-        ax.set_title('Whitespace Frequency Distribution')
-        ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        ax.set_ylabel('Whitespace Units')
+            ax.set_title('Whitespace Frequency Distribution')
+            ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax.set_ylabel('Whitespace Units')
 
-        ax2.set_title('Missed Window Coverage (Absolute minus Windowed)')
-        ax2.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        ax2.set_ylabel('Number of Whitespace Units Difference')
+            ax2.set_title('Missed Window Coverage (Absolute minus Windowed)')
+            ax2.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax2.set_ylabel('Number of Whitespace Units Difference')
 
-        ax3.set_title('Window Coverage Comparison')
-        ax3.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        ax3.set_ylabel('Whitespace Units')
-        ax3.legend()
-        plt.show()
+            ax3.set_title('Window Coverage Comparison')
+            ax3.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax3.set_ylabel('Whitespace Units')
+            ax3.legend()
+            plt.show()
 
 
 
@@ -664,6 +698,587 @@ def legacy(filename):
     ax.set_yscale('symlog') #super important to plot '0' values
     ax.legend()
     plt.show()
+
+
+
+
+#BEGIN THE SIMULATOR - Should put this in a separate file, but visualstudio is mean when it comes to selecting the file to execute etc
+
+class Device:
+    def __init__(self, ts, bw, id):
+        self.ts = ts
+        self.bw = bw
+        self.id = id
+        
+        self.freq = 0
+
+        self.run_time = 50 #this number should be modified based on access model
+
+        self.sched_time = 0
+
+        self.total_sched_time = 0 #total running time
+        self.last_scheduled = 0 
+        self.waiting_time = 0 #total waiting time IF communication interrupted
+        #maybe need a scheduling flag?
+
+    #FIXME
+    def schedule(self, freq, bandwidth, startframe):
+        if bandwidth < self.bw:
+            print('DEVICE {} SCHEDULING ERROR, BW TOO SMALL'.format(self.id))
+        else: 
+            self.freq = freq
+            self.waiting_time = self.waiting_time + (startframe - (self.last_scheduled - 1))
+            self.sched_time = startframe
+
+    def deschedule(self, endframe):
+        if endframe - self.sched_time < self.run_time:
+            print("device {} only ran for {}. Required runtime: {}".format(self.id,endframe-self.sched_time,self.run_time))
+
+        self.total_sched_time = self.total_sched_time + (endframe - self.sched_time) 
+        self.last_scheduled = endframe
+
+    def totalTime(self):
+        return self.total_sched_time
+
+    def totalWait(self):
+        return self.waiting_time
+
+    def getFreq(self):
+        return self.freq
+
+    def getBW(self):
+        return self.bw
+
+    def getID(self):
+        return self.id
+
+    def getRemianingRun(self, frame):
+        return self.run_time - (frame - self.sched_time)
+
+    #will not implement getTS yet, as we have no true concept of TS as everything is running without a-priori knowledge
+
+#class DeviceCreator
+
+class Slice: #has been supersceeded by simply using a dataframe
+    def __init__(self,frequency,bandwidth):
+        self.freq = frequency
+        self.bw = bandwidth
+    
+    def getFreq(self):
+        return self.freq
+
+    def getBW(self):
+        return self.bw
+
+class SpectrumEntity:
+    def __init__(self,filename):
+        self.framecount = 0
+        self.dataset = pd.read_csv(filename, header=0)#, converters={0: np.int32, 1: np.int32, 2: np.int32, 3: np.int32, 4: np.int32}, dtype=np.int32)
+
+        self.framemax = np.max(self.dataset['frame_no'])
+        self.dataset = self.dataset.sort_values(['frequency'], ascending=True)
+        self.dataset['start'] = self.dataset['frame_no'].subtract(self.dataset['timescale']-1)
+
+        self.state = self.dataset.groupby(self.dataset['start'])
+        #self.stateGroups = dict(list(self.state))
+
+        self.spect_df = pd.DataFrame()
+        #self.sliceList = []
+
+        self.sliceFrame = pd.DataFrame()
+
+        #when nextFrame is called check that result is not null
+    def getNextFrame(self):
+
+        if self.framecount == self.framemax:
+            print("what we gon do now?")
+            return null
+
+        #for i in range(13):
+        #clear current buffer
+        #del self.sliceList[:]
+        self.framecount = self.framecount + 1
+
+        #create frame list of slices
+            
+    #       for key, group in self.state:
+    #           if key < 13:
+    #               print(key)
+    #               #print(group)
+    #               self.spect_df = self.spect_df.append(group)
+    #               self.spect_df = self.spect_df[self.spect_df.frame_no > key] #this is pretty inefficient
+    #               print(self.spect_df) #this should be a self contained dataframe of the current windows, just take a slice from this dataset and gg
+
+        if self.framecount in self.state.groups:
+            self.spect_df = self.spect_df.append(self.state.get_group(self.framecount))
+            self.spect_df = self.spect_df[self.spect_df.frame_no > self.framecount]
+            #self.dataset = self.dataset.sort_values(['frequency'], ascending=True)
+            self.spect_df = self.spect_df.sort_values(['frequency'], ascending=True)
+        else: 
+            self.spect_df = self.spect_df[self.spect_df.frame_no > self.framecount] #this is pretty inefficient
+
+        #slice spect_df
+        #print(self.spect_df)
+        self.sliceFrame = self.spect_df[['frequency','bandwidth']].reset_index(drop=True)
+        
+        if False:                    
+            print(self.framecount)
+            print(self.spect_df)
+            print(self.sliceFrame)
+
+        #check for adjacency - maybe later, currently ignore adjacency
+
+
+        #slices should be sorted as the generation of them is procedural
+        #return self.sliceList
+        return self.sliceFrame
+        
+class DeviceQueue:
+    def __init__(self,numDev):
+        self.queue = []
+
+        #create the devices to place in the queue
+        #ts and bw could be generated uniquely for each device, currently we are using a placeholder
+        self.ts = 11
+        self.bw = 66
+        
+        for i in range(numDev):
+            self.queue.append(Device(self.ts,self.bw,i))
+
+        print("{} devices created".format(len(self.queue)))
+
+        #this is called by the scheduler
+    def push(self,dev,frame):
+        #push takes in a device object and adds it to the queue
+        dev.deschedule(frame)
+        self.queue.append(dev) 
+
+    def peek(self):
+        if not self.queue:
+            return null
+        else:
+            return self.queue[0]
+
+    def search(self,bw,time):
+        for dev in self.queue:
+            if dev.getBW <= bw:
+                temp = dev
+                self.queue.remove(dev)
+                return temp
+                break
+
+    def pop(self):
+        if not self.queue:
+            return null
+        else:
+            return self.queue.popleft()
+
+    def len(self):
+        return len(self.queue)
+
+class Scheduler:
+    def __init__(self,filename,numDev):
+        #create spectrum entity
+        #create UDQ
+        #create devices (inform queue of number of devices to populate)
+        
+        #implement logging
+     
+        self.RSL = [] #remainingSpectrumList
+        self.ADL = [] #allocatedDeviceList
+
+        self.currentFrame = 1
+
+        #devices created within queue object
+        #self.UDQ = DeviceQueue(numDev) #working around the queue as it does not seem efficient
+
+        self.UDL = [] #unallocatedDeviceList
+        self.ts = 11
+        self.bw = 66
+        
+        for i in range(numDev):
+            self.UDL.append(Device(self.ts,self.bw,i))
+
+        print("{} devices created".format(len(self.UDL)))
+
+        #slices prepared within SE object
+        self.SE = SpectrumEntity(filename)
+        
+        self.run_list()
+
+        #implement operational loop within here
+    def run(self):
+        #check SE for spectrumstate
+        self.spectrumState = self.SE.getNextFrame()
+
+        #print(self.spectrumState)
+
+        adevs = len(self.ADL)
+        adevIdx = 0
+
+        udevs = len(self.UDL)
+        udevIdx = 0
+
+        remainBW = 0
+        self.tempADL = self.ADL.copy()
+
+        uFlag = False
+        noAlloc = False
+
+        #compare spectrum state with ADL to ensure allocations still valid
+        while not self.spectrumState.empty:
+            #print('Frame number: {}'.format(self.currentFrame))
+
+            if self.ADL:
+                for row in self.spectrumState.itertuples(): #iterate through all of the available spectrum
+                    #row['frequency'], row['bandwidth']
+
+                    uBW = row['bandwidth']
+                    uFreq = row['frequency'] #beginnign of the unallocated frequency for that particular slice
+
+                    for adev in range(adevIdx,len(self.ADL)): #FIX ALL THESE TO HAVE CORRECT INDEXATION!!!!!!!!!!!
+
+                        #still need to take into account duration expired cases
+                    
+                        #check frequency and bandwidth 
+                        
+                        #if we are in to the slice and the previous slice was not befitting
+                        if adev.getFreq + adev.getBW < uFreq and uFlag:
+                            #device needs to be deallocated
+                            uFlag = False
+                            self.UDL.append(adev)
+                            self.tempADL.remove(adev)
+
+                            adevIdx = adevIdx + 1
+                            continue 
+
+                        if adev.getFreq + adev.getBW <= row['frequency'] + row['bandwidth'] and adev.getFreq >= row['frequency']:
+                            #device exists within slice
+
+                            #this does not work correctly for fractioned slices methinks.
+                            if uFreq != adev.getFreq:
+                                print('Gap in allocation detected. Dev start: {}, window start {}'.format(adev.getFreq,uFreq))
+                                self.RSL.append([uFreq,uFreq - dev.getFreq], columns=['frequency','bandwidth'])
+                                uBW = uBW - (uFreq - dev.getFreq)
+                            
+                            uFreq = adev.getFreq + adev.getBW #this will be one position after the end of the allocation, i.e. the next position not conflicting with the current device
+                            uBW = uBW - adev.getBW
+
+                            if uBW < 0:
+                                print('Well, we have a negative bandwidth here, thats not good ....')
+                            elif uBW == 0:
+                                print('Slice completely allocated')
+                                adevIdx = adevIdx + 1
+                                continue
+                            else: 
+                                print('Allocation valid')
+                        
+                        elif dev.getFreq >= row['frequency'] + row['bandwidth']:
+                            #device does not exist in this slice, thus remaining slice is free
+                            print('Device {} does not exist in this slice, remaining slice: {} - validate with uBW: {}'.format(adevIdx,row['frequency']+row['bandwidth']-uFreq,uBW))
+
+                            adevIdx = adevIdx #this device still needs to be checked
+
+                            self.RSL.append([uFreq,uBW], columns=['frequency','bandwidth'])
+                            uFlag = True;
+                        
+                            break #currently allocated devices do not exist in this slice
+
+
+                        #other devices may also not exist within this bound ... probably should not break then ..
+                        #not if they are sorted.
+
+                        adevIdx = adevIdx + 1
+                        #update RSL
+
+                        #deallocate conflicting devices
+            
+                    #for udev in range(self.UDQ.len):
+            else: 
+                noAlloc = True
+
+            print('Allocated devices checked: {}. Devices removed: {}'.format(len(self.ADL), len(self.ADL) - len(self.tempADL)))
+            self.ADL = self.tempADL.copy() #I REALLY dislike this, however its annoying to remove elements from a list as you iterate over it
+
+            if self.UDL:
+                #unallocated devices, interrogate unallocated list then find potential slots for each device waiting
+                if noAlloc:
+                    self.RSL = self.spectrumState.copy()
+
+                for udev in range(len(self.UDL)):
+                    print(udev)
+                    #to schedule device increment the frequency by the devices bandwidth and subtract the available bandwidth for that opportunity
+                    print(self.RSL[self.RSL['frequency'] >= self.UDL[udev].getBW()].iloc[0:2,0:2]) 
+                    print(self.RSL[self.RSL['frequency'] >= self.UDL[udev].getBW()].iloc[0:2,0:2].values.tolist()) 
+
+
+            #generate RSL
+
+            #check RSL against UDQ and update RSL accordingly
+
+            #perform logging on current state
+
+            #sort ADL by frequency to reduce number of comparisons
+
+            #loop again until we have exhausted the spectrum
+            self.currentFrame = self.currentFrame + 1
+            self.spectrumState = self.SE.getNextFrame()
+
+            if self.spectrumState.empty:
+                print("End of spectrum reached!")
+                break
+
+        print("should output things here, plots etc")
+        #finish up
+        print("scheduler terminating")
+
+    def run_list(self):
+        #check SE for spectrumstate
+        self.spectrumState = self.SE.getNextFrame().values.tolist()
+
+        #print(self.spectrumState)
+        remainBW = 0
+        adevIdx = 0
+
+        noAlloc = False
+
+        removed = 0
+        #compare spectrum state with ADL to ensure allocations still valid
+        while self.spectrumState:
+            #print('Frame number: {}'.format(self.currentFrame))
+
+            
+            if self.ADL:
+                i = 0
+                for row in self.spectrumState: #iterate through all of the available spectrum
+                    #row['frequency'], row['bandwidth']
+
+                    uFreq = row[0] #beginnign of the unallocated frequency for that particular slice
+                    uBW = row[1]
+                    
+                    while i < len(self.ADL):
+                    #for adev in islice(self.ADL,adevIdx,None): #FIX ALL THESE TO HAVE CORRECT INDEXATION!!!!!!!!!!!
+
+                        #check frequency and bandwidth                       
+                        #if we are in to the slice and the previous slice was not befitting
+                        if self.ADL[i].getFreq() + self.ADL[i].getBW() < uFreq:
+                            #device needs to be descheduled
+                            print('Deallocating: dev {} from [{},{}]'.format(self.ADL[i].getID(),self.ADL[i].getFreq(),self.ADL[i].getBW()))
+                            self.ADL[i].deschedule(self.currentFrame)
+                            self.UDL.append(self.ADL[i])
+                            del self.ADL[i]
+
+                            #i = i - 1
+                            removed = removed + 1
+                            continue 
+
+                        uFlag = False
+
+                        #still need to take into account duration expired cases
+                        if self.ADL[i].getRemianingRun(self.currentFrame) <= 0:
+                            #device needs to be descheduled
+                            print('Runtime expired: dev {} from [{},{}]'.format(self.ADL[i].getID(),self.ADL[i].getFreq(),self.ADL[i].getBW()))
+                            self.ADL[i].deschedule(self.currentFrame)
+                            self.UDL.append(self.ADL[i])
+                            del self.ADL[i]
+
+                            #i = i - 1
+                            removed = removed + 1
+                            continue 
+
+                        elif self.ADL[i].getFreq() >= row[0] + row[1]:
+                            #device does not exist in this slice, thus remaining slice is free
+                            #print('Device {} does not exist in this slice, remaining bandwidth in slice: {} - validate with uBW: {}'.format(adev.getID(),row[0]+row[1]-uFreq,uBW))
+
+                            self.RSL.append([uFreq,uBW])
+
+                            #this device still needs to be checked
+                            break #currently allocated devices do not exist in this slice
+
+                        elif self.ADL[i].getFreq() + self.ADL[i].getBW() <= row[0] + row[1] and self.ADL[i].getFreq() >= row[0]:
+                            #device exists within slice
+
+                            #this does not work correctly for fractioned slices methinks.
+                            if uFreq != self.ADL[i].getFreq():
+                                print('Gap in allocation detected. Dev start: {}, window start {}'.format(self.ADL[i].getFreq(),uFreq))
+                                self.RSL.append([uFreq,uFreq - self.ADL[i].getFreq()])
+                                uBW = uBW - (uFreq - self.ADL[i].getFreq())
+                            
+                            uFreq = self.ADL[i].getFreq() + self.ADL[i].getBW() #this will be one position after the end of the allocation, i.e. the next position not conflicting with the current device
+                            uBW = uBW - self.ADL[i].getBW()
+
+                            if uBW < 0:
+                                print('Well, we have a negative bandwidth here, thats not good ....')
+                            elif uBW == 0:
+                                print('Slice completely allocated!')
+                            #else: 
+                                #print('Allocation valid')
+
+                        #end of loop and device is valid, increment i
+                        i = i + 1
+
+                    #remaining spectrum is unoccupied
+                    if i == len(self.ADL):
+                        self.RSL.append([row[0],row[1]])
+
+                    #for udev in range(self.UDQ.len):
+
+                #sort newly populated RSL
+                adevIdx = 0
+                #print('Remaining Spectrum List')
+                #print(self.RSL)
+                self.RSL.sort(key=lambda x: x[0])
+                #print(self.RSL)
+            else: 
+                noAlloc = True
+
+            allocated = 0
+            if self.UDL:
+                #unallocated devices, interrogate unallocated list then find potential slots for each device waiting
+                if noAlloc:
+                    self.RSL = self.spectrumState.copy()
+                    noAlloc = False
+
+                #for udev in self.UDL:
+                #    iterations = iterations + 1
+                #    #to schedule device increment the frequency by the devices bandwidth and subtract the available bandwidth for that opportunity
+                #    #print(self.RSL[self.RSL['frequency'] >= self.UDL[udev].getBW()].iloc[0:2,0:2]) 
+                #    #print(self.RSL[self.RSL['frequency'] >= self.UDL[udev].getBW()].iloc[0:2,0:2].values.tolist()) 
+                #    for row in self.RSL:
+                #        if row[1] >= udev.getBW():
+                #            #print(row)
+                #            udev.schedule(row[0],row[1],self.currentFrame)
+                #            row[1] = row[1] - udev.getBW()
+                #            row[0] = row[0] + udev.getBW()
+                #            self.ADL.append(udev)
+                #            self.UDL.remove(udev) #wont work
+                #            break   
+
+                i = 0
+                offset = 0
+                while i < len(self.UDL):
+                    #to schedule device increment the frequency by the devices bandwidth and subtract the available bandwidth for that opportunity
+                    
+                    #this looks very C and not at all pythonic :)
+                    for row in self.RSL:
+                        if row[1] >= self.UDL[i].getBW():
+                            #print(i)
+                            #print(offset
+                            print('Allocating {} to [{},{}]'.format(self.UDL[i].getID(),row[0],row[1]))
+                            self.UDL[i].schedule(row[0],row[1],self.currentFrame)                            
+                            row[0] = row[0] + self.UDL[i].getBW()
+                            row[1] = row[1] - self.UDL[i].getBW()
+                            self.ADL.append(self.UDL[i])
+                            del self.UDL[i] #might work
+                            #offset = offset + 1
+                            i = i - 1
+                            allocated = allocated + 1
+                            break   
+                    i = i + 1
+                
+                #print('Iterations of self.UDL: {}, self.UDL size: {}'.format(i,len(self.UDL)))
+                print('Original spectrum:')
+                print(self.spectrumState)
+                print('Remaining spectrum for frame {}:'.format(self.currentFrame)) 
+                print(self.RSL)
+
+            #generate RSL
+
+            #check RSL against UDQ and update RSL accordingly
+
+            #perform logging on current state
+
+            #sort ADL by frequency to reduce number of comparisons
+
+            #loop again until we have exhausted the spectrum
+            self.currentFrame = self.currentFrame + 1
+            self.spectrumState = self.SE.getNextFrame().values.tolist()
+
+            print('Frame {} - Allocated devices checked: {}. Devices removed: {}. Devices reallocated: {}. Devices unallocated: {}'.format(self.currentFrame-1,len(self.ADL), removed, allocated, len(self.UDL)))
+            removed = 0
+            del self.RSL[:]
+
+            if not self.spectrumState:
+                print("End of spectrum reached!")
+                break
+
+        print("should output things here, plots etc")
+        #finish up
+        print("scheduler terminating")
+        
+
+
+        
+
+
+def dev_sim(filename):
+
+    print('Now running Device Simulation')
+
+
+    runtest = Scheduler(filename,200)
+
+    print('Device simulation ended')
+    dataset = pd.read_csv(filename, header=0)#, converters={0: np.int32, 1: np.int32, 2: np.int32, 3: np.int32, 4: np.int32}, dtype=np.int32)
+
+    #print(dataset.dtypes)
+
+    #cols:[0] timescale, [1] frequency, [2] bandwidth, [3] whitespace, [4] frame_no
+    #in a loop (iterator), [0] = index, [1] = timescale ...
+    print(dataset.columns)
+    cols = dataset.columns
+    
+    nbins = 131072
+
+    #This set of tests are designed to simulate channel occupancy/utilisation of secondary devces accessing the whitespace spectrum, given particular access requirements.
+    #These requirements are (initially): Bandwidth, minimum timescale.
+    #The tests will be performed accross the number of devices operating and the resulting utilisation of the spectrum
+    #Note that complex scheduling algorithms will not be explored (at least initially), as this is an extremely deep topic within itself. 
+
+    #the resulting plots will be: Spectrum utilisation/total throughput versus number of devices, with a family of curves, each curve will either be a variance on device required timescale or bandwidth. 
+    #a comparison plot for this will also be generated detailing the per device throughput and how it decays as a function of device density.
+
+    #it is also of note that these models do not take into account channel capacity models, instead raw spectrum resources are focused upon and is of the unit resource blocks. Where a resource block is a 1TS * 1BW segment. (The TS may be 5ms, and BW be 12.5kHz) ...
+
+    #will also need to perform these analyses as a function of time, as the sectrum changes over time, so classic, throughput vs device plots are not entirely valid here, as there is an additional variable in play. 
+
+    framemax = np.max(dataset['frame_no'])
+    dev_arry = np.zeros(framemax)
+
+    bwmin = 66;
+    tsmin = 10; #these will not be required, as the windowing function already uses these basic values as the windows are observed.
+
+    dev_bw = 66 #bandwidth for each device
+    dev_ts = 11 #timescale for each device
+
+    #use dataset, a subset here is not required
+
+    dataset = dataset.sort_values(['frequency'], ascending=True)
+    dataset['start'] = dataset['frame_no'].subtract(dataset['timescale']-1)
+
+    #print('Printing frame 1')
+    #print(dataset.loc[dataset['start'] == 1])
+
+    ds_grp = dataset.groupby(dataset['start'])
+    #ds_grp = ds_grp['frequency'].apply(lambda x: x.sort_values(ascending=False))
+
+    #for c in ds_grp.groups: 
+    #    print(c)
+    #print(ds_grp.get_group(1))
+
+    cur_frame = 1
+    spect_df = pd.DataFrame()
+    for key, group in ds_grp:
+        if key < 13:
+            print(key)
+            #print(group)
+            spect_df = spect_df.append(group)
+            spect_df = spect_df[spect_df.frame_no > key] #this is pretty inefficient
+            print(spect_df)
+        #key is the identifier for the group - this is the start number
+        #group becomes the entires within the group, ordered with ascending frequency
+        #diff = 
+        #cur_frame = key
 
 
 
