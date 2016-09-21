@@ -32,7 +32,8 @@ def main():
     root.withdraw()
     filename = filedialog.askopenfilename() #('Window_dump.csv')
 
-    occupancy(filename)
+    #occupancy(filename)
+    dutycycle(filename)
     #analyse(filename,select) #For analysis package
     #dev_sim(filename) #For device simulator
     #legacy_sns(filename)
@@ -111,7 +112,6 @@ def occupancy(filename):
      ax.set_yticks(np.arange(0,hslices+1,16))
 
 
-
      plt.tight_layout()
      plt.show()
 
@@ -119,6 +119,64 @@ def occupancy(filename):
 def dutycycle(filename):
      print('Now running dutycycle plot, ensure a duration dataset is selected')
      dataset = pd.read_csv(filename, header=0)
+
+     resolution = 131072 #this will have to be modified depending on how the FFT is computed
+
+     framemax = np.max(dataset['frame_no'])
+
+     vslices = 1024
+     vscans = int((resolution*0.8)/vslices)+1 #this should be an integer, if it isnt, tough :)
+     
+     newrez = int(resolution*0.8) + 1
+     
+     freq_arry = np.zeros(newrez)
+     indent = int(resolution * 0.1)
+
+     count = 0
+     #row:idx,timescale,frequency,bandwidth,whitespace,frame_no
+     for row in dataset.itertuples():
+         #freq_arry[int((row[2] - indent)/vscans)] += row[1]
+         freq_arry[row[2] - indent] += row[1]
+         count = count + 1
+         
+         if count%100000 == 0:
+            print(count)
+    
+     #now manipulate freq_arry, yes its a roundabout way, but ohwell
+     #normalise
+     freq_arry /= framemax #normalise
+     freq_arry *= 100 #out of 100
+     freq_arry -= 100 #whitespace is positive, so incumbent activity here will now be negative
+     freq_arry *= -1 #make incumbent activity positive
+
+     freq_max = np.zeros(vslices)
+     freq_avg = np.zeros(vslices)
+     for i in range(newrez):
+         if freq_arry[i] > freq_max[int(i/vscans)]:
+             freq_max[int(i/vscans)] = freq_arry[i]
+
+         freq_avg[int(i/vscans)] += freq_arry[i]/vscans
+
+ 
+     fig = plt.figure()
+     ax = fig.add_subplot(1,1,1) 
+
+     freq = np.linspace(0,vslices-1,vslices)
+#     ax.scatter(freq,freq_max, edgecolor = '', c='k')
+#     ax.scatter(freq,freq_avg, edgecolor = '', c='r')
+
+     ax.plot(freq,freq_max, c='k')
+     ax.plot(freq,freq_avg, c='r')
+
+     ax.set_title('Duty Cycle')
+     ax.set_xlabel('Frequency')
+     ax.set_ylabel('Percentage')
+
+     ax.axis([0,vslices,0,101])
+
+     plt.show()
+
+
 
 
 def analyse(filename,test):
