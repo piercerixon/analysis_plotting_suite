@@ -26,15 +26,76 @@ def main():
     #fn='frame_no'
     print('Running Analysis Suite')
 
-    matplotlib.style.use('ggplot')
+    #matplotlib.style.use('ggplot')
 
     root = tk.Tk()
     root.withdraw()
     filename = filedialog.askopenfilename() #('Window_dump.csv')
 
+    occupancy(filename)
     #analyse(filename,select) #For analysis package
-    dev_sim(filename) #For device simulator
+    #dev_sim(filename) #For device simulator
     #legacy_sns(filename)
+
+    # here we are plotting stacked slices on top of eachother, plotting frequency vs time (in frames)
+def occupancy(filename):
+     print('Now running occupancy plot, ensure a bandwidth dataset is selected')
+     dataset = pd.read_csv(filename, header=0)
+
+     resolution = 131072 #this will have to be modified depending on how the FFT is computed
+
+     framemax = np.max(dataset['frame_no'])
+
+     hslices = 255 #number of horizontal slices
+     vslices = 1024 #number of vertical slices
+     
+     hscans = int(framemax/hslices) + 1
+     vscans = int((resolution*0.8)/vslices) #this should be an integer, if it isnt, tough :)
+
+     freq_arry = np.zeros(resolution*0.8)
+     indent = int(resolution * 0.1)
+
+     mesh = np.zeros((hslices+1,vslices))
+
+     hidx = 0
+     count = 0
+
+     #row:idx,timescale,frequency,bandwidth,whitespace,frame_no
+     for row in dataset.itertuples():
+        #as the rows are sorted by frame number, we can just iterate through them
+        if row[5] > (hidx+1)*hscans:
+
+            #zero array
+            print(freq_arry)
+            for i in range(vslices):
+                mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - (vscans-1))*-1
+            hidx = hidx + 1
+            freq_arry.fill(0)
+        
+        count = count + 1
+        freq_arry[row[2] - indent : row[2]+row[3]-1 - indent] += 1
+
+        if count%100000 == 0:
+            print(count)
+
+    #drop lastrow
+     #for i in range(vslices):
+     #   mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - vscans)*-1
+
+     fig = plt.figure()
+     ax = fig.add_subplot(1,1,1)
+     m = ax.pcolormesh(mesh, vmin=0, vmax=np.amax(mesh), cmap='gist_heat_r')
+     plt.colorbar(m,ax=ax)
+     ax.set_ylim(0,hslices)
+     ax.set_xlim(0,vslices)
+     plt.tight_layout()
+     plt.show()
+
+     # here we are plotting totals of duration per frequency as a percentage of total duration
+def dutycycle(filename):
+     print('Now running dutycycle plot, ensure a duration dataset is selected')
+     dataset = pd.read_csv(filename, header=0)
+
 
 def analyse(filename,test):
     
@@ -73,6 +134,33 @@ def analyse(filename,test):
 
         ### PLOTTING THINGS HERE ###
 
+
+        fig3 = plt.figure()
+        axh = fig3.add_subplot(2,1,1)
+        axh2 = fig3.add_subplot(2,1,2)
+
+        bwtsframe[cols[2]].hist(ax=axh, bins = 200, bottom = .1, log = True)
+        axh.set_yscale('log')
+        axh.set_xlim(0,30000)
+        axh.set_ylim(.1,1e8)
+        #axh.set_xscale('log')
+
+        bwtsframe[cols[0]].hist(ax=axh2, bins = 200, bottom = .1, log = True)
+        axh2.set_yscale('log')
+        axh2.set_xlim(0,60000)
+        axh2.set_ylim(.1,1e8)
+        #axh2.set_xscale('log')
+
+        axh.set_title('Bandwidth Histogram')
+        axh.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+        axh.set_ylabel('Density')
+
+        axh2.set_title('Duration Histogram')
+        axh2.set_xlabel('Timescale (5.3ms/unit)')
+        axh2.set_ylabel('Density')
+
+        plt.show()
+
         ##ax1 = fig.add_subplot(1,2,1) #convention (row,col,idx)
         ##ax2 = fig.add_subplot(1,2,2)
         fig = plt.figure()
@@ -96,9 +184,11 @@ def analyse(filename,test):
         ax.set_yscale('log')
         ax.set_xscale('log')
         ax.set_ylim(1,1e5)
+        ax.set_xlim(10,1e5)
         ax2.set_yscale('log')
         ax2.set_xscale('log')
         ax2.set_ylim(1,1e5)
+        ax2.set_xlim(10,1e5)
         #ax.set_xlim(0,pxls)
         #ax.set_ylim(0,pxls)
 
@@ -134,8 +224,13 @@ def analyse(filename,test):
 
         ax.set_yscale('log')
         ax.set_xscale('log')
+        ax.set_xlim(1,1e5)
+        ax.set_ylim(1,1e9)
+        
         ax2.set_yscale('log')
         ax2.set_xscale('log')
+        ax2.set_xlim(1,1e5)
+        ax2.set_ylim(1,1e10)
 
         ax.set_title('Whitespace Distribution vs Bandwidth')
         ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
@@ -163,14 +258,19 @@ def analyse(filename,test):
 
         axa.set_yscale('log')
         axa.set_xscale('log')
+        axa.set_xlim(1,1e5)
+        axa.set_ylim(1,1e6)
+        
         ax2a.set_yscale('log')
         ax2a.set_xscale('log')
+        ax2a.set_xlim(1,1e5)
+        ax2a.set_ylim(1,1e6)
 
-        axa.set_title('Bandwidth Distribution')
+        axa.set_title('Window Bandwidth Distribution')
         axa.set_xlabel('Bandwidth in Bins (190Hz/bin)')
         axa.set_ylabel('Number of Observations')
 
-        ax2a.set_title('Timescale Distribution')
+        ax2a.set_title('Window Duration Distribution')
         ax2a.set_xlabel('Timescale (5.3ms/unit)')
         ax2a.set_ylabel('Number of Observations')
 
