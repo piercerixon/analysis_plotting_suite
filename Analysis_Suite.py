@@ -26,7 +26,7 @@ def main():
     #fn='frame_no'
     print('Running Analysis Suite')
 
-    #matplotlib.style.use('ggplot')
+    matplotlib.style.use('ggplot')
 
     root = tk.Tk()
     root.withdraw()
@@ -66,7 +66,7 @@ def occupancy(filename):
         if row[5] > (hidx+1)*hscans:
 
             #zero array
-            print(freq_arry)
+            print(hidx)
             for i in range(vslices):
                 mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - (vscans-1))*-1
             hidx = hidx + 1
@@ -83,11 +83,35 @@ def occupancy(filename):
      #   mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - vscans)*-1
 
      fig = plt.figure()
-     ax = fig.add_subplot(1,1,1)
+     ax = fig.add_subplot(1,1,1) 
+     
+     for spine in ['left','right','top','bottom']:
+        ax.spines[spine].set_color('k')
+     
+     ax.yaxis.set_ticks_position('left')
+     ax.xaxis.set_ticks_position('bottom')
+     ax.tick_params(reset=True, which = 'major', width=1, length=3, color='k')
+     ax.tick_params(which = 'minor', width=.5, length=1, color='k')
+
+        #plt.subplot(111)
      m = ax.pcolormesh(mesh, vmin=0, vmax=np.amax(mesh), cmap='gist_heat_r')
+     
+     ax.axis([0,vslices,0,hslices])
+     #ax.set_ticks(True)
+     
+     
      plt.colorbar(m,ax=ax)
-     ax.set_ylim(0,hslices)
-     ax.set_xlim(0,vslices)
+     #plt.grid(True, which='major', axis='both', linestyle='-', color='none')
+     
+     ax.set_title('Spectrum Occupancy')
+     ax.set_xlabel('Frequency')
+     ax.set_ylabel('Time')
+
+     ax.set_xticks(np.arange(0,vslices+1,64))
+     ax.set_yticks(np.arange(0,hslices+1,16))
+
+
+
      plt.tight_layout()
      plt.show()
 
