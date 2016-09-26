@@ -4,6 +4,8 @@ from itertools import islice
 import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.colorbar as mplcb
 from matplotlib.colors import LogNorm
 import numpy as np
 import pandas as pd
@@ -33,7 +35,8 @@ def main():
     filename = filedialog.askopenfilename() #('Window_dump.csv')
 
     #occupancy(filename)
-    dutycycle(filename)
+    #dutycycle(filename)
+    hexbin(filename)
     #analyse(filename,select) #For analysis package
     #dev_sim(filename) #For device simulator
     #legacy_sns(filename)
@@ -115,11 +118,86 @@ def occupancy(filename):
      plt.tight_layout()
      plt.show()
 
+#new improved spicy hexbin with distributions :D
+def hexbin(filename):
+     print('Now running hexbin plot, ensure a partitioned dataset is selected')
+     dataset = pd.read_csv(filename, header=0)
+ 
+     #xmax = np.power(10,np.ceil(np.log10(np.max(dataset['bandwidth']))))*.5
+     xmax = np.power(10,4.5)
+     xmin = 50
+     ymax = np.power(10,np.ceil(np.log10(np.max(dataset['timescale']))))
+     ymin = np.min(dataset['timescale'])
+
+     #arrange the various axes nicely
+     gs=gridspec.GridSpec(4,4)
+     gs.update(wspace = 0.01, hspace= 0.01)
+
+     ax1 = plt.subplot(gs[1:,:-1])
+     ax2 = plt.subplot(gs[1:,-1])
+     ax3 = plt.subplot(gs[0,:-1])
+     ax4 = gs[0,-1]
+
+     gs2=gridspec.GridSpecFromSubplotSpec(12,16,ax4)
+     cbax = plt.subplot(gs2[4,1:-1])
+
+     #create the hexbin plot and a hook for the colourmap
+     cbmap = ax1.hexbin(dataset['bandwidth'], dataset['timescale'], mincnt=1, xscale='log', yscale='log', cmap='Greys', norm=matplotlib.colors.LogNorm(), reduce_C_function=np.sum)
+     ax1.axis([xmin, xmax, ymin, ymax])
+     
+     for spine in ['left','bottom']:
+        ax1.spines[spine].set_color('k')
+        
+     ax2.spines['bottom'].set_color('k')
+     ax3.spines['left'].set_color('k')
+     
+        
+     ax1.tick_params(which = 'major', width=1, length=4, color='k')
+     ax1.tick_params(which = 'minor', width=1, length=2, color='k')
+
+     ax1.set_xticks([66, 132, 263, 526, 1316, 2632, 5263, 10526])
+     ax1.set_xticklabels([r'12.5kHz', r'25kHz', r'50kHz', r'100kHz', r'250kHz', r'500kHz', r'1MHz', r'2.5MHz'])
+     ax1.xaxis.set_ticks_position('bottom')
+     ax1.set_xlabel('Bandwidth')
+     
+     ax1.set_yticks([10,20,50,100,200,500,2000,6000,12000,60000])
+     ax1.set_yticklabels([r'50ms',r'100ms',r'250ms',r'500ms',r'1s',r'2.5s',r'10s',r'30s',r'1m',r'5m'])
+     ax1.yaxis.set_ticks_position('left')
+     ax1.set_ylabel('Duration')
+     
+     #ax1.set_title("With a log color scale")
+     #cbax = mplcb.make_axes_gridspec(ax4)
+
+     cb = plt.colorbar(cbmap,cax=cbax, orientation='horizontal')
+     cb.outline.set_visible(True)
+     cb.outline.set_edgecolor('black')   
+     cb.set_label('Observation Density')
+     #cb.set_ticks([np.log10(1),np.log10(10),np.log10(50),np.log10(100),np.log10(500)])
+     #cb.set_ticklabels([1,10,50,100,500])
+
+     #cb = plt.colorbar()
+    
+     
+     #plt.subplot(133)
+     #Timescale histogram     
+     ax2.hist(np.log10(dataset['timescale']), log=True, bins=100, orientation='horizontal', color='k')
+     ax2.set_ylim(1,np.log10(ymax))
+     ax2.yaxis.set_visible(False)
+
+     #plt.subplot(312)
+     #Bandwidth histogram
+     ax3.hist(np.log10(dataset['bandwidth']), log=True, bins=150, color='k')
+     ax3.axis([np.log10(xmin), np.log10(xmax), 1, ymax])
+     ax3.xaxis.set_visible(False)
+
+
+     plt.show()
+
      # here we are plotting totals of duration per frequency as a percentage of total duration
 def dutycycle(filename):
      print('Now running dutycycle plot, ensure a duration dataset is selected')
      dataset = pd.read_csv(filename, header=0)
-
+ 
      resolution = 131072 #this will have to be modified depending on how the FFT is computed
 
      framemax = np.max(dataset['frame_no'])
