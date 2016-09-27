@@ -114,7 +114,6 @@ def occupancy(filename):
      ax.set_xticks(np.arange(0,vslices+1,64))
      ax.set_yticks(np.arange(0,hslices+1,16))
 
-
      plt.tight_layout()
      plt.show()
 
@@ -124,14 +123,26 @@ def hexbin(filename):
      dataset = pd.read_csv(filename, header=0)
  
      #xmax = np.power(10,np.ceil(np.log10(np.max(dataset['bandwidth']))))*.5
-     xmax = np.power(10,4.5)
+     bwmax = np.max(dataset['bandwidth'])
+     print(bwmax*190)
+     if np.power(10,np.ceil(np.log10(bwmax))) > 4*bwmax:
+        xmax = np.power(10,np.ceil(np.log10(bwmax))) / 4
+     elif np.power(10,np.ceil(np.log10(bwmax))) > 2*bwmax:
+        xmax = np.power(10,np.ceil(np.log10(bwmax))) / 2
+     else: 
+        xmax = np.power(10,np.ceil(np.log10(bwmax)))
+
+     if xmax < 25000: xmax = 25000 #This is here as 4.75MHz is the minimax (smallest max) x axis value. 
+     
+     print(xmax*190)
+
      xmin = 50
      ymax = np.power(10,np.ceil(np.log10(np.max(dataset['timescale']))))
      ymin = np.min(dataset['timescale'])
 
      #arrange the various axes nicely
-     gs=gridspec.GridSpec(4,4)
-     gs.update(wspace = 0.01, hspace= 0.01)
+     gs=gridspec.GridSpec(5,6)
+     gs.update(wspace = 0.03, hspace= 0.03)
 
      ax1 = plt.subplot(gs[1:,:-1])
      ax2 = plt.subplot(gs[1:,-1])
@@ -142,7 +153,7 @@ def hexbin(filename):
      cbax = plt.subplot(gs2[4,1:-1])
 
      #create the hexbin plot and a hook for the colourmap
-     cbmap = ax1.hexbin(dataset['bandwidth'], dataset['timescale'], mincnt=1, xscale='log', yscale='log', cmap='Greys', norm=matplotlib.colors.LogNorm(), reduce_C_function=np.sum)
+     cbmap = ax1.hexbin(dataset['bandwidth'], dataset['timescale'], mincnt=1, xscale='log', yscale='log', cmap='inferno', norm=matplotlib.colors.LogNorm(), reduce_C_function=np.sum)
      ax1.axis([xmin, xmax, ymin, ymax])
      
      for spine in ['left','bottom']:
@@ -155,8 +166,8 @@ def hexbin(filename):
      ax1.tick_params(which = 'major', width=1, length=4, color='k')
      ax1.tick_params(which = 'minor', width=1, length=2, color='k')
 
-     ax1.set_xticks([66, 132, 263, 526, 1316, 2632, 5263, 10526])
-     ax1.set_xticklabels([r'12.5kHz', r'25kHz', r'50kHz', r'100kHz', r'250kHz', r'500kHz', r'1MHz', r'2.5MHz'])
+     ax1.set_xticks([66, 132, 263, 526, 1316, 2632, 5263, 13158])#, 26316, 52632])
+     ax1.set_xticklabels([r'12.5kHz', r'25kHz', r'50kHz', r'100kHz', r'250kHz', r'500kHz', r'1MHz', r'2.5MHz', r'5MHz', r'10MHz'])
      ax1.xaxis.set_ticks_position('bottom')
      ax1.set_xlabel('Bandwidth')
      
@@ -180,16 +191,32 @@ def hexbin(filename):
      
      #plt.subplot(133)
      #Timescale histogram     
-     ax2.hist(np.log10(dataset['timescale']), log=True, bins=100, orientation='horizontal', color='k')
-     ax2.set_ylim(1,np.log10(ymax))
+#     ax2.hist(np.log10(dataset['timescale']), log=True, bins=100, orientation='horizontal', color='k')
+#     ax2.set_ylim(1,np.log10(ymax))
+
+     ax2.hist(dataset['timescale'], bins=np.logspace(np.log10(ymin), np.log10(ymax), num=100), orientation='horizontal', log=True, color='k')
+     ax2.set_yscale('log')
+
      ax2.yaxis.set_visible(False)
+     ax2.xaxis.set_ticks_position('bottom')
+     ax2.tick_params(which = 'major', width=1, length=4, color='k')
+     ax2.tick_params(which = 'minor', width=1, length=2, color='k')
 
      #plt.subplot(312)
      #Bandwidth histogram
-     ax3.hist(np.log10(dataset['bandwidth']), log=True, bins=150, color='k')
-     ax3.axis([np.log10(xmin), np.log10(xmax), 1, ymax])
-     ax3.xaxis.set_visible(False)
+#     ax3.hist(np.log10(dataset['bandwidth']), log=True, bins=150, color='k')
+#     ax3.axis([np.log10(xmin), np.log10(xmax), 1, ymax])
 
+    #Better bandwidth histogram
+     ax3.hist(dataset['bandwidth'], bins=np.logspace(np.log10(xmin), np.log10(xmax), num=200), log=True, color='k')
+     ax3.set_xscale('log')
+     ax3.set_xlim(xmin, xmax)
+     #ax3.axis([xmin, xmax, 1, ymax])
+     
+     ax3.xaxis.set_visible(False)
+     ax3.yaxis.set_ticks_position('left')
+     ax3.tick_params(which = 'major', width=1, length=4, color='k')
+     ax3.tick_params(which = 'minor', width=1, length=2, color='k')
 
      plt.show()
 
