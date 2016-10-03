@@ -13,6 +13,9 @@ import seaborn as sns
 import sys
 import cProfile, pstats, io
 import copy
+import csv
+import mmap
+import os
 
 __author__ = 'Pierce Rixon'
 select = 1
@@ -26,31 +29,185 @@ def main():
     #f='frequency'
     #bw='bandwidth'
     #fn='frame_no'
+    
+
     print('Running Analysis Suite')
 
     matplotlib.style.use('ggplot')
 
     root = tk.Tk()
     root.withdraw()
-    filename = filedialog.askopenfilename() #('Window_dump.csv')
+    
+    #Use metadata to strip the 'Total whitespace' message out of the end of each csv file selected
+    #metadata()
 
-    #occupancy(filename)
-    #dutycycle(filename)
+    print('Select configuration file')
+    cfgfile = filedialog.askopenfilename(filetypes = [("config files","*.cfg")])
+
+    with open(cfgfile) as cfg:
+        config = cfg.read().splitlines()
+
+    #occupancy(config)
+    #occupancy_csv(config) #NOT WORKING FOR LARGE DATASETS 100MB+
+    #dutycycle(config)
+
+    #print('Select window file')
+    filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")]) #('Window_dump.csv')    
     hexbin(filename)
     #analyse(filename,select) #For analysis package
     #dev_sim(filename) #For device simulator
     #legacy_sns(filename)
 
+def metadata():
+    
+    print('Select files to remove \'total whitespace\' message and dump to metadata file')
+    print('because im lazy, if the file does not have \'total whitespace\' at the end, it will take 5ever for the function to return')
+    filenames = filedialog.askopenfilenames(filetypes = [("csv files","*.csv")])
+    filelist = list(filenames)
+
+    mpath = os.path.dirname(filelist[0])+'/metadata.txt'
+
+    print(mpath)
+
+    print('number of files: {}'.format(len(filelist)))
+    #print(filelist)
+
+    meta_file = open(mpath, 'w+')
+    meta_file.write('Number of files: {}\n'.format(len(filelist)))
+
+    for f in filelist:
+        meta_file.write(f)
+  #      meta_file.write('\n')
+        with open(f, 'r+') as file:
+            file.seek(0, os.SEEK_END)
+            pos = file.tell() - 1
+            end = file.tell() - 1
+
+            while pos > 0 and file.read(1) != "T":
+                pos -= 1
+                file.seek(pos, os.SEEK_SET)
+
+            pos -= 1
+            file.seek(pos, os.SEEK_SET)
+
+            if pos > 0:
+                string = file.read(end-pos)
+                print(string)
+                meta_file.write(string+'\n\n')
+                file.seek(pos, os.SEEK_SET)
+                file.truncate()
+            else:
+                print('File does not have Total Whitespace message')
+            file.close()
+
+
     # here we are plotting stacked slices on top of eachother, plotting frequency vs time (in frames)
-def occupancy(filename):
+def occupancy_csv(config):
      print('Now running occupancy plot, ensure a bandwidth dataset is selected')
+     filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")])
+     
+     with open(filename, 'r') as r:
+         next(r)
+         dataset = [[int(x) for x in rec] for rec in csv.reader(r, delimiter=',')]
+     #dataset = pd.read_csv(filename, header=0)
+
+     c_freq = np.float(config[2])
+     #config[3] has the filter bandwidth, which is not active for a WBX daughterboard, as its locked to 40MHz
+     c_bandwidth = np.float(config[4])
+
+     resolution = 131072 #this will have to be modified depending on how the FFT is computed
+
+     framemax = np.amax(dataset, axis=0)[4] #frame_no
+     print(framemax)
+     #framemax = np.max(dataset['frame_no'])
+
+     hslices = 512 #number of horizontal slices
+     vslices = 1024 #number of vertical slices
+     
+     hscans = int(framemax/hslices) + 1
+     vscans = int((resolution*0.8)/vslices) #this should be an integer, if it isnt, tough :)
+
+     freq_arry = np.zeros(resolution*0.8)
+     indent = int(resolution * 0.1)
+
+     mesh = np.zeros((hslices+1,vslices))
+
+     hidx = 0
+     count = 0
+
+     #row:idx,timescale,frequency,bandwidth,whitespace,frame_no
+     for row in dataset:
+        #as the rows are sorted by frame number, we can just iterate through them
+        if row[4] > (hidx+1)*hscans:
+
+            #zero array
+            print(hidx)
+            for i in range(vslices):
+                mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - (vscans-1))*-1
+            hidx = hidx + 1
+            freq_arry.fill(0)
+        
+        count = count + 1
+        freq_arry[row[1] - indent : row[1]+row[2]-1 - indent] += 1
+
+        if count%100000 == 0:
+            print(count)
+
+    #drop lastrow
+     #for i in range(vslices):
+     #   mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - vscans)*-1
+     fig = plt.figure()
+     ax = fig.add_subplot(1,1,1) 
+     
+     for spine in ['left','right','top','bottom']:
+        ax.spines[spine].set_color('k')
+ 
+     ax.tick_params(which = 'major', width=1, length=3, color='k')
+     ax.tick_params(which = 'minor', width=.5, length=1, color='k')
+         
+     ax.yaxis.set_ticks_position('left')
+     ax.xaxis.set_ticks_position('bottom')
+
+        #plt.subplot(111)
+     meshm = np.ma.masked_where(mesh < 1, mesh)
+     m = ax.pcolormesh(meshm, vmin=1, vmax=np.amax(mesh), cmap='inferno_r')
+     
+     ax.axis([0,vslices,0,hidx])
+     ax.set_xticks(np.linspace(1,vslices,5))#, 26316, 52632])
+
+     start = (c_freq - (c_bandwidth*.4))/1e6
+     stop = (c_freq + (c_bandwidth*.4))/1e6
+     ax.set_xticklabels(np.linspace(start,stop,5))
+     #ax.set_ticks(True)
+     
+     
+     plt.colorbar(m,ax=ax)
+     #plt.grid(True, which='major', axis='both', linestyle='-', color='none')
+     
+     ax.set_title('Spectrum Occupancy')
+     ax.set_xlabel('Frequency (MHz)')
+     ax.set_ylabel('Time (s)')
+
+     ax.set_yticks(np.linspace(0,hidx,num=12))
+     ax.set_yticklabels(np.around(np.linspace(0,hidx,num=12)*.005*hscans,decimals=2))
+
+     plt.tight_layout()
+     plt.show()
+
+def occupancy(config):
+     print('Now running occupancy plot, ensure a bandwidth dataset is selected')
+     filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")])
      dataset = pd.read_csv(filename, header=0)
+
+     c_freq = np.float(config[2])
+     #config[3] has the filter bandwidth, which is not active for a WBX daughterboard, as its locked to 40MHz
+     c_bandwidth = np.float(config[4])
 
      resolution = 131072 #this will have to be modified depending on how the FFT is computed
 
      framemax = np.max(dataset['frame_no'])
 
-     hslices = 255 #number of horizontal slices
+     hslices = 512 #number of horizontal slices
      vslices = 1024 #number of vertical slices
      
      hscans = int(framemax/hslices) + 1
@@ -85,22 +242,28 @@ def occupancy(filename):
     #drop lastrow
      #for i in range(vslices):
      #   mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - vscans)*-1
-
      fig = plt.figure()
      ax = fig.add_subplot(1,1,1) 
      
      for spine in ['left','right','top','bottom']:
         ax.spines[spine].set_color('k')
-     
+ 
+     ax.tick_params(which = 'major', width=1, length=3, color='k')
+     ax.tick_params(which = 'minor', width=.5, length=1, color='k')
+         
      ax.yaxis.set_ticks_position('left')
      ax.xaxis.set_ticks_position('bottom')
-     ax.tick_params(reset=True, which = 'major', width=1, length=3, color='k')
-     ax.tick_params(which = 'minor', width=.5, length=1, color='k')
 
         #plt.subplot(111)
-     m = ax.pcolormesh(mesh, vmin=0, vmax=np.amax(mesh), cmap='gist_heat_r')
+     meshm = np.ma.masked_where(mesh < 1, mesh)
+     m = ax.pcolormesh(meshm, vmin=1, vmax=np.amax(mesh), cmap='inferno_r')
      
-     ax.axis([0,vslices,0,hslices])
+     ax.axis([0,vslices,0,hidx])
+     ax.set_xticks(np.linspace(1,vslices,5))#, 26316, 52632])
+
+     start = (c_freq - (c_bandwidth*.4))/1e6
+     stop = (c_freq + (c_bandwidth*.4))/1e6
+     ax.set_xticklabels(np.linspace(start,stop,5))
      #ax.set_ticks(True)
      
      
@@ -108,11 +271,11 @@ def occupancy(filename):
      #plt.grid(True, which='major', axis='both', linestyle='-', color='none')
      
      ax.set_title('Spectrum Occupancy')
-     ax.set_xlabel('Frequency')
-     ax.set_ylabel('Time')
+     ax.set_xlabel('Frequency (MHz)')
+     ax.set_ylabel('Time (s)')
 
-     ax.set_xticks(np.arange(0,vslices+1,64))
-     ax.set_yticks(np.arange(0,hslices+1,16))
+     ax.set_yticks(np.linspace(0,hidx,num=12))
+     ax.set_yticklabels(np.around(np.linspace(0,hidx,num=12)*.005*hscans,decimals=2))
 
      plt.tight_layout()
      plt.show()
@@ -121,7 +284,10 @@ def occupancy(filename):
 def hexbin(filename):
      print('Now running hexbin plot, ensure a partitioned dataset is selected')
      dataset = pd.read_csv(filename, header=0)
- 
+
+     #matplotlib.rcParams.update({'font.size': 21}
+     #plt.figure(figsize=(6,8), dpi=600)
+
      #xmax = np.power(10,np.ceil(np.log10(np.max(dataset['bandwidth']))))*.5
      bwmax = np.max(dataset['bandwidth'])
      print(bwmax*190)
@@ -136,9 +302,31 @@ def hexbin(filename):
      
      print(xmax*190)
 
+#     xmin = 1  #Just for the BW=1 TS=1 dataset
+#     ymin = 1
      xmin = 50
-     ymax = np.power(10,np.ceil(np.log10(np.max(dataset['timescale']))))
+     ymax = np.maximum(1e6,np.power(10,np.ceil(np.log10(np.max(dataset['timescale'])))))
      ymin = np.min(dataset['timescale'])
+
+     ##cheekybonusbits
+     #array = np.histogram(dataset['timescale'], bins=np.logspace(np.log10(ymin), np.log10(ymax), num=200))
+     #print(array)
+     #x = array[1]
+     #y = array[0]
+     #print(x)
+     #print(y)
+     #cr_y = np.cumsum(y[::-1])[::-1] 
+     #print(cr_y)
+     #print("len x: {}, len y: {}".format(len(x[:-1]),len(cr_y)))
+     #plt.figure()
+     #ax = plt.subplot(111)
+     #ax.scatter(x[:-1],cr_y)
+     ##ax.set_yscale('log')
+     #ax.set_xscale('log')
+     #plt.show()
+
+     fig = plt.figure(figsize=(22,14))
+     fig.subplots_adjust(left=0.06, bottom=0.06, right=.98, top=.98)
 
      #arrange the various axes nicely
      gs=gridspec.GridSpec(5,6)
@@ -166,15 +354,16 @@ def hexbin(filename):
      ax1.tick_params(which = 'major', width=1, length=4, color='k')
      ax1.tick_params(which = 'minor', width=1, length=2, color='k')
 
-     ax1.set_xticks([66, 132, 263, 526, 1316, 2632, 5263, 13158])#, 26316, 52632])
+     ax1.set_xticks([66, 132, 263, 526, 1316, 2632, 5263, 13158])#, 26316])#, 52632])
      ax1.set_xticklabels([r'12.5kHz', r'25kHz', r'50kHz', r'100kHz', r'250kHz', r'500kHz', r'1MHz', r'2.5MHz', r'5MHz', r'10MHz'])
      ax1.xaxis.set_ticks_position('bottom')
-     ax1.set_xlabel('Bandwidth')
+     ax1.set_xlabel('Bandwidth', fontsize=24)
      
-     ax1.set_yticks([10,20,50,100,200,500,2000,6000,12000,60000])
-     ax1.set_yticklabels([r'50ms',r'100ms',r'250ms',r'500ms',r'1s',r'2.5s',r'10s',r'30s',r'1m',r'5m'])
+     ax1.set_yticks([10,20,50,100,200,500,2000,6000,12000,60000,180000,720000])
+     ax1.set_yticklabels([r'50ms',r'100ms',r'250ms',r'500ms',r'1s',r'2.5s',r'10s',r'30s',r'1m',r'5m',r'15m',r'1h'])
      ax1.yaxis.set_ticks_position('left')
-     ax1.set_ylabel('Duration')
+     ax1.set_ylabel('Duration', fontsize=24)
+     ax1.tick_params(axis='both', labelsize=16)
      
      #ax1.set_title("With a log color scale")
      #cbax = mplcb.make_axes_gridspec(ax4)
@@ -182,7 +371,9 @@ def hexbin(filename):
      cb = plt.colorbar(cbmap,cax=cbax, orientation='horizontal')
      cb.outline.set_visible(True)
      cb.outline.set_edgecolor('black')   
-     cb.set_label('Observation Density')
+     cb.set_label('Observation Density', fontsize=14)
+     cbax.xaxis.set_label_position('top')
+     cb.ax.tick_params(labelsize=14)
      #cb.set_ticks([np.log10(1),np.log10(10),np.log10(50),np.log10(100),np.log10(500)])
      #cb.set_ticklabels([1,10,50,100,500])
 
@@ -194,13 +385,16 @@ def hexbin(filename):
 #     ax2.hist(np.log10(dataset['timescale']), log=True, bins=100, orientation='horizontal', color='k')
 #     ax2.set_ylim(1,np.log10(ymax))
 
-     ax2.hist(dataset['timescale'], bins=np.logspace(np.log10(ymin), np.log10(ymax), num=100), orientation='horizontal', log=True, color='k')
+     ax2hist = ax2.hist(dataset['timescale'], bins=np.logspace(np.log10(ymin), np.log10(ymax), num=100), orientation='horizontal', log=True, color='k')
      ax2.set_yscale('log')
+     ax2.set_xlim(1,np.power(10,np.ceil(np.log10(np.amax(ax2hist[0])))))
 
      ax2.yaxis.set_visible(False)
      ax2.xaxis.set_ticks_position('bottom')
      ax2.tick_params(which = 'major', width=1, length=4, color='k')
      ax2.tick_params(which = 'minor', width=1, length=2, color='k')
+     
+     ax2.tick_params(axis='both', labelsize=14)
 
      #plt.subplot(312)
      #Bandwidth histogram
@@ -218,11 +412,16 @@ def hexbin(filename):
      ax3.tick_params(which = 'major', width=1, length=4, color='k')
      ax3.tick_params(which = 'minor', width=1, length=2, color='k')
 
+     ax3.tick_params(axis='both', labelsize=14)
+
+     plt.rc('axes', labelsize=20)   
+     plt.savefig('Basic.png', dpi=plt.gcf().dpi)
      plt.show()
 
      # here we are plotting totals of duration per frequency as a percentage of total duration
 def dutycycle(filename):
      print('Now running dutycycle plot, ensure a duration dataset is selected')
+     filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")])
      dataset = pd.read_csv(filename, header=0)
  
      resolution = 131072 #this will have to be modified depending on how the FFT is computed
@@ -277,7 +476,7 @@ def dutycycle(filename):
      ax.set_xlabel('Frequency')
      ax.set_ylabel('Percentage')
 
-     ax.axis([0,vslices,0,101])
+     ax.axis([0,vslices,0,100])
 
      plt.show()
 
@@ -319,153 +518,202 @@ def analyse(filename,test):
 
         print(bwtsframe_red)
 
+        subprogram = 3
         ### PLOTTING THINGS HERE ###
+        if (subprogram == 1):
 
+            fig3 = plt.figure()
+            axh = fig3.add_subplot(2,1,1)
+            axh2 = fig3.add_subplot(2,1,2)
 
-        fig3 = plt.figure()
-        axh = fig3.add_subplot(2,1,1)
-        axh2 = fig3.add_subplot(2,1,2)
+            bwtsframe[cols[2]].hist(ax=axh, bins = 200, bottom = .1, log = True)
+            axh.set_yscale('log')
+            axh.set_xlim(0,30000)
+            axh.set_ylim(.1,1e8)
+            #axh.set_xscale('log')
 
-        bwtsframe[cols[2]].hist(ax=axh, bins = 200, bottom = .1, log = True)
-        axh.set_yscale('log')
-        axh.set_xlim(0,30000)
-        axh.set_ylim(.1,1e8)
-        #axh.set_xscale('log')
+            bwtsframe[cols[0]].hist(ax=axh2, bins = 200, bottom = .1, log = True)
+            axh2.set_yscale('log')
+            axh2.set_xlim(0,60000)
+            axh2.set_ylim(.1,1e8)
+            #axh2.set_xscale('log')
 
-        bwtsframe[cols[0]].hist(ax=axh2, bins = 200, bottom = .1, log = True)
-        axh2.set_yscale('log')
-        axh2.set_xlim(0,60000)
-        axh2.set_ylim(.1,1e8)
-        #axh2.set_xscale('log')
+            axh.set_title('Bandwidth Histogram')
+            axh.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            axh.set_ylabel('Density')
 
-        axh.set_title('Bandwidth Histogram')
-        axh.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        axh.set_ylabel('Density')
+            axh2.set_title('Duration Histogram')
+            axh2.set_xlabel('Timescale (5.3ms/unit)')
+            axh2.set_ylabel('Density')
 
-        axh2.set_title('Duration Histogram')
-        axh2.set_xlabel('Timescale (5.3ms/unit)')
-        axh2.set_ylabel('Density')
+            plt.show()
 
-        plt.show()
-
-        ##ax1 = fig.add_subplot(1,2,1) #convention (row,col,idx)
-        ##ax2 = fig.add_subplot(1,2,2)
-        fig = plt.figure()
-        ax = fig.add_subplot(2,1,1)
-        ax2 = fig.add_subplot(2,1,2)
-    #    plt.pcolormesh(mesh, norm=LogNorm(vmin=1, vmax=np.amax(mesh)), cmap='inferno')
+            ##ax1 = fig.add_subplot(1,2,1) #convention (row,col,idx)
+            ##ax2 = fig.add_subplot(1,2,2)
+            fig = plt.figure()
+            ax = fig.add_subplot(2,1,1)
+            ax2 = fig.add_subplot(2,1,2)
+        #    plt.pcolormesh(mesh, norm=LogNorm(vmin=1, vmax=np.amax(mesh)), cmap='inferno')
     
-        #plt.scatter(dataset[cols[2]],dataset[cols[0]])
+            #plt.scatter(dataset[cols[2]],dataset[cols[0]])
 
-        sc1 = ax.scatter(bwtsframe_red[cols[2]],bwtsframe_red[cols[0]],edgecolor='',c=bwtsframe_red['count'],cmap='inferno',norm=LogNorm(vmin=1,vmax=bwtsframe_red['count'].max()))
-        sc2 = ax2.scatter(bwtsframe_red[cols[2]],bwtsframe_red[cols[0]],edgecolor='',c=bwtsframe_red['ws_count'],cmap='inferno',norm=LogNorm(vmin=1,vmax=bwtsframe_red['ws_count'].max()))
+            sc1 = ax.scatter(bwtsframe_red[cols[2]],bwtsframe_red[cols[0]],edgecolor='',c=bwtsframe_red['count'],cmap='inferno',norm=LogNorm(vmin=1,vmax=bwtsframe_red['count'].max()))
+            sc2 = ax2.scatter(bwtsframe_red[cols[2]],bwtsframe_red[cols[0]],edgecolor='',c=bwtsframe_red['ws_count'],cmap='inferno',norm=LogNorm(vmin=1,vmax=bwtsframe_red['ws_count'].max()))
 
-        #plt.hist2d(dataset[cols[2]],dataset[cols[0]],bins=1000)
-        plt.colorbar(sc1,ax=ax)
-        plt.colorbar(sc2,ax=ax2)
+            #plt.hist2d(dataset[cols[2]],dataset[cols[0]],bins=1000)
+            plt.colorbar(sc1,ax=ax)
+            plt.colorbar(sc2,ax=ax2)
 
-        #ticks = np.arange(0, bwmax, 6)
-        #labels = range(ticks.size)
-        #plt.xticks(ticks, labels)
+            #ticks = np.arange(0, bwmax, 6)
+            #labels = range(ticks.size)
+            #plt.xticks(ticks, labels)
 
-        ax.set_yscale('log')
-        ax.set_xscale('log')
-        ax.set_ylim(1,1e5)
-        ax.set_xlim(10,1e5)
-        ax2.set_yscale('log')
-        ax2.set_xscale('log')
-        ax2.set_ylim(1,1e5)
-        ax2.set_xlim(10,1e5)
-        #ax.set_xlim(0,pxls)
-        #ax.set_ylim(0,pxls)
+            ax.set_yscale('log')
+            ax.set_xscale('log')
+            ax.set_ylim(1,1e5)
+            ax.set_xlim(10,1e5)
+            ax2.set_yscale('log')
+            ax2.set_xscale('log')
+            ax2.set_ylim(1,1e5)
+            ax2.set_xlim(10,1e5)
+            #ax.set_xlim(0,pxls)
+            #ax.set_ylim(0,pxls)
 
-        ax.set_title('Window Count')
-        ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        ax.set_ylabel('Timescale (5.3ms/unit)')
+            ax.set_title('Window Count')
+            ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax.set_ylabel('Timescale (5.3ms/unit)')
 
-        ax2.set_title('Whitespace Density')
-        ax2.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        ax2.set_ylabel('Timescale (5.3ms/unit)')
+            ax2.set_title('Whitespace Density')
+            ax2.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax2.set_ylabel('Timescale (5.3ms/unit)')
     
-        plt.show()
+            plt.show()
 
-        #1.b
-        #this second set of tests provides a plot of number of observations on the y axis versus the timescale or bandwidth. 
+        if (subprogram == 2):
+            #this second set of tests provides a plot of number of observations on the y axis versus the timescale or bandwidth. 
 
-#        wsvfframe = wsvfframe.groupby(['frequency','bandwidth'])['timescale'].sum().reset_index()
+    #        wsvfframe = wsvfframe.groupby(['frequency','bandwidth'])['timescale'].sum().reset_index()
 
-        bwsum = bwtsframe_red.groupby(['bandwidth'])['ws_count'].sum().reset_index()
-        print('bwsum printout')
-        print(bwsum)
+            bwsum = bwtsframe_red.groupby(['bandwidth'])['ws_count'].sum().reset_index()
+            print('bwsum printout')
+            print(bwsum)
 
-        tssum = bwtsframe_red.groupby(['timescale'])['ws_count'].sum().reset_index()
-        print('tssum printout')
-        print(tssum)
+            tssum = bwtsframe_red.groupby(['timescale'])['ws_count'].sum().reset_index()
+            print('tssum printout')
+            print(tssum)
 
         
-        fig = plt.figure()
-        ax = fig.add_subplot(2,2,2)
-        ax2 = fig.add_subplot(2,2,4)
-        ax.scatter(bwsum['bandwidth'],bwsum['ws_count'],edgecolor='')
-        ax2.scatter(tssum['timescale'],tssum['ws_count'],edgecolor='')
+            fig = plt.figure()
+            ax = fig.add_subplot(2,2,2)
+            ax2 = fig.add_subplot(2,2,4)
+            ax.scatter(bwsum['bandwidth'],bwsum['ws_count'],edgecolor='')
+            ax2.scatter(tssum['timescale'],tssum['ws_count'],edgecolor='')
 
-        ax.set_yscale('log')
-        ax.set_xscale('log')
-        ax.set_xlim(1,1e5)
-        ax.set_ylim(1,1e9)
+            ax.set_yscale('log')
+            ax.set_xscale('log')
+            ax.set_xlim(1,1e5)
+            ax.set_ylim(1,1e9)
         
-        ax2.set_yscale('log')
-        ax2.set_xscale('log')
-        ax2.set_xlim(1,1e5)
-        ax2.set_ylim(1,1e10)
+            ax2.set_yscale('log')
+            ax2.set_xscale('log')
+            ax2.set_xlim(1,1e5)
+            ax2.set_ylim(1,1e10)
 
-        ax.set_title('Whitespace Distribution vs Bandwidth')
-        ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        ax.set_ylabel('Unique Whitespace')
+            ax.set_title('Whitespace Distribution vs Bandwidth')
+            ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax.set_ylabel('Unique Whitespace')
 
-        ax2.set_title('Whitespace Distribution vs Timescale')
-        ax2.set_xlabel('Timescale (5.3ms/unit)')
-        ax2.set_ylabel('Unique Whitespace')
+            ax2.set_title('Whitespace Distribution vs Timescale')
+            ax2.set_xlabel('Timescale (5.3ms/unit)')
+            ax2.set_ylabel('Unique Whitespace')
 
-        ## window count plots - number of unique window observations
+            ## window count plots - number of unique window observations
 
-        bwhist = dataset[cols[2]]
-        tshist = dataset[cols[0]]
+            bwhist = dataset[cols[2]]
+            tshist = dataset[cols[0]]
 
-        bwhist = bwhist.groupby(bwhist).size().reset_index().rename(columns={0:'count'})
+            bwhist = bwhist.groupby(bwhist).size().reset_index().rename(columns={0:'count'})
 
-        tshist = tshist.groupby(tshist).size().reset_index().rename(columns={0:'count'})
+            tshist = tshist.groupby(tshist).size().reset_index().rename(columns={0:'count'})
 
-        print(bwhist)
+            print(bwhist)
 
-        axa = fig.add_subplot(2,2,1)
-        ax2a = fig.add_subplot(2,2,3)
-        axa.scatter(bwhist[cols[2]],bwhist['count'],edgecolor='')
-        ax2a.scatter(tshist[cols[0]],tshist['count'],edgecolor='')
+            axa = fig.add_subplot(2,2,1)
+            ax2a = fig.add_subplot(2,2,3)
+            axa.scatter(bwhist[cols[2]],bwhist['count'],edgecolor='')
+            ax2a.scatter(tshist[cols[0]],tshist['count'],edgecolor='')
 
-        axa.set_yscale('log')
-        axa.set_xscale('log')
-        axa.set_xlim(1,1e5)
-        axa.set_ylim(1,1e6)
+            axa.set_yscale('log')
+            axa.set_xscale('log')
+            axa.set_xlim(1,1e5)
+            axa.set_ylim(1,1e6)
         
-        ax2a.set_yscale('log')
-        ax2a.set_xscale('log')
-        ax2a.set_xlim(1,1e5)
-        ax2a.set_ylim(1,1e6)
+            ax2a.set_yscale('log')
+            ax2a.set_xscale('log')
+            ax2a.set_xlim(1,1e5)
+            ax2a.set_ylim(1,1e6)
 
-        axa.set_title('Window Bandwidth Distribution')
-        axa.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-        axa.set_ylabel('Number of Observations')
+            axa.set_title('Window Bandwidth Distribution')
+            axa.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            axa.set_ylabel('Number of Observations')
 
-        ax2a.set_title('Window Duration Distribution')
-        ax2a.set_xlabel('Timescale (5.3ms/unit)')
-        ax2a.set_ylabel('Number of Observations')
+            ax2a.set_title('Window Duration Distribution')
+            ax2a.set_xlabel('Timescale (5.3ms/unit)')
+            ax2a.set_ylabel('Number of Observations')
 
-        plt.show()
+            plt.show()
 
-    #elif(test == 8):
-    #BW vs WS and TS vs WS analysis - Test 1 is the complementary analysis of this test
-    #we want to plot both unique whitespace incurred as well as total whitespace as the x axis decreases
+        if (subprogram == 3):
+
+            bwsum = bwtsframe_red.groupby(['bandwidth'])['ws_count'].sum().reset_index()
+            print('bwsum printout')
+            print(bwsum)
+
+            tssum = bwtsframe_red.groupby(['timescale'])['ws_count'].sum().reset_index()
+            print('tssum printout')
+            print(tssum)
+
+            tsmax = np.max(bwtsframe_red['timescale'])
+            xmax = np.power(10,np.ceil(np.log10(tsmax)))
+
+            ts_cumsum = np.cumsum(tssum['ws_count'][::-1])[::-1] 
+
+            fig = plt.figure()
+            ax = fig.add_subplot(2,1,1)
+            ax2 = fig.add_subplot(2,1,2)
+            #ax.scatter(bwsum['bandwidth'],bwsum['ws_count'],edgecolor='')
+            ax.scatter(tssum['timescale'],tssum['ws_count'],edgecolor='')
+            ax2.scatter(tssum['timescale'],ts_cumsum,edgecolor='')
+            #ax2.scatter(tssum['timescale'],ts_cumsum,edgecolor='')
+
+            ax.set_yscale('log')
+            ax.set_xscale('log')
+            ax.set_xlim(1,xmax)
+            #ax.set_ylim(1,1e10)
+        
+            #ax2.set_yscale('log')
+            ax2.set_xscale('log')
+            ax2.set_xlim(1,xmax)
+            #ax2.set_ylim(1e6,1e11)
+
+            #ax.set_title('Whitespace Distribution vs Bandwidth')
+            #ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            #ax.set_ylabel('Unique Whitespace')
+            
+            ax.set_title('Whitespace Distribution vs Timescale')
+            ax.set_xlabel('Timescale (5.3ms/unit)')
+            ax.set_ylabel('Unique Whitespace')
+
+            ax2.set_title('Cumulative Whitespace vs Timescale')
+            ax2.set_xlabel('Timescale (5.3ms/unit)')
+            ax2.set_ylabel('Unique Whitespace')
+
+            ## window count plots - number of unique window observations
+            plt.show()
+
+        #elif(test == 8):
+        #BW vs WS and TS vs WS analysis - Test 1 is the complementary analysis of this test
+        #we want to plot both unique whitespace incurred as well as total whitespace as the x axis decreases
 
         
 
@@ -474,6 +722,8 @@ def analyse(filename,test):
     #Series 1 - WS per bin due to partitioning algorithm
     #Series 2 - WS per bin based on the unpartitioned spectrum
         
+        subprogram = 3
+
         wsvfframe = pd.concat([dataset[cols[1]],dataset[cols[2]],dataset[cols[0]]], axis=1, keys=[cols[1],cols[2],cols[0]])
 
         #wfc:[0] frequency, [1] bandwidth, [2] timescale
@@ -492,6 +742,28 @@ def analyse(filename,test):
 
         for row in wsvfframe.itertuples():
             relws[row[1]:row[1]+row[2]] += row[3]
+
+            
+        if True:
+            fig = plt.figure()
+            ax = fig.add_subplot(2,1,1)
+            axa = fig.add_subplot(2,1,2)
+        
+            ax.scatter(freq,relws,edgecolor='')
+
+            relwsS = np.sort(relws)
+
+            axa.scatter(freq,relwsS[::-1],edgecolor='')
+
+            axa.set_title('Whitespace Frequency Distribution CCDF')
+            axa.set_xlabel('Descending Magnitude Ordered Bin Count')
+            axa.set_ylabel('Whitespace Units over Observation Period')
+
+            ax.set_title('Whitespace Frequency Distribution')
+            ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
+            ax.set_ylabel('Whitespace Units')
+
+            plt.show()
 
         ### comaprison dataset NOTE: BW must = 1 for this dataset to be valid ###
 
@@ -549,29 +821,6 @@ def analyse(filename,test):
             axza.legend()
 
             plt.show()
-
-        if True:
-            fig = plt.figure()
-            ax = fig.add_subplot(2,1,1)
-            axa = fig.add_subplot(2,1,2)
-        
-            ax.scatter(freq,relws,edgecolor='')
-
-            relwsS = np.sort(relws)
-
-            axa.scatter(freq,relwsS[::-1],edgecolor='')
-
-            axa.set_title('Whitespace Frequency Distribution CCDF')
-            axa.set_xlabel('Descending Magnitude Ordered Bin Count')
-            axa.set_ylabel('Whitespace Units over Observation Period')
-
-            ax.set_title('Whitespace Frequency Distribution')
-            ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
-            ax.set_ylabel('Whitespace Units')
-
-            plt.show()
-
-
 
         if False:
 
