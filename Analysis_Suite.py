@@ -48,12 +48,13 @@ def main():
         config = cfg.read().splitlines()
 
     #occupancy(config)
+    occupancy_v2(config)
     #occupancy_csv(config) #NOT WORKING FOR LARGE DATASETS 100MB+
     #dutycycle(config)
 
     #print('Select window file')
     filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")]) #('Window_dump.csv')    
-    hexbin(filename)
+    #hexbin(filename)
     #analyse(filename,select) #For analysis package
     #dev_sim(filename) #For device simulator
     #legacy_sns(filename)
@@ -280,6 +281,189 @@ def occupancy(config):
      plt.tight_layout()
      plt.show()
 
+def occupancy_v2(config):
+
+#Occupancy is a measure of duration
+     print('Now running occupancy plot. This will work for any partitioned dataset')
+     filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")])
+     dataset = pd.read_csv(filename, header=0)
+
+     c_freq = np.float(config[2])
+     #config[3] has the filter bandwidth, which is not active for a WBX daughterboard, as its locked to 40MHz
+     c_bandwidth = np.float(config[4])
+
+     resolution = 131072 #this will have to be modified depending on how the FFT is computed
+
+     framemax = np.max(dataset['frame_no'])
+
+     hslices = 1001 #number of horizontal slices
+     vslices = 2001 #number of vertical slices
+     
+     hscans = int(framemax/hslices) + 1
+     vscans = np.ceil((resolution*0.8)/vslices) #this should be an integer, if it isnt, tough :)
+
+     indent = int(resolution * 0.1)
+
+     #mesh[row,cols]
+     mesh = np.full((hslices-1,vslices-1),np.int(hscans*vscans), dtype=np.int)
+
+     count = 0
+
+     #Condition the dataframe accordingly
+     dataset['start'] = dataset['frame_no'].subtract(dataset['timescale']-1)
+     dataset['frequency'] = dataset['frequency'].subtract(indent)
+     
+     print(dataset)
+     print("hscans: {}".format(hscans))
+     print("vscans: {}".format(vscans))
+     #      0      1        2           3       4         5       6
+     #row:idx,timescale,frequency,bandwidth,whitespace,frame_no,start
+     for row in dataset.itertuples():
+
+
+        #try slicing lel
+
+        #mesh[np.int((row[6] - 1)/hscans) : np.int((row[2] - 1)/vscans), \
+        #    np.int((row[6] + row[1] - 1)/hscans) : np.int((row[2] + row[3] - 1)/vscans)] += 1
+
+        x = np.floor(row[2]/vscans)
+        y = np.floor(row[6]/hscans)
+
+        d = np.int(np.ceil(row[1]/hscans))
+        b = np.int(np.ceil(row[3]/vscans))
+
+        for i in range(d):
+            for j in range(b):
+
+                cell = vscans * hscans
+
+                #weight = 
+                w_x = 0
+                w_y = 0
+
+                w_xl = row[2] - (x + j) * vscans                
+                w_xh = row[2] + row[3]-1 - (x + j + 1) * vscans
+
+                if w_xl > 0 and w_xh > 0:
+                    w_x = vscans - w_xl + 1
+                elif w_xl > 0 and w_xh <= 0:
+                    w_x = row[3]
+                elif w_xh > 0 and w_xl <= 0:
+                    w_x = vscans
+                else: 
+                    w_x = row[2] + row[3]-1 - (x + j) * vscans
+
+                w_yl = row[6] - (y + i) * hscans
+                w_yh = row[6] + row[1]-1 - (y + i + 1) * hscans
+
+                if w_yl > 0 and w_yh > 0:
+                    w_y = hscans - w_yl + 1
+                elif w_yl > 0 and w_yh <= 0:
+                    w_y = row[1]
+                elif w_yh > 0 and w_yl <= 0:
+                    w_y = hscans
+                else:
+                    w_y = row[6] + row[1]-1 - (y + i) * hscans
+                
+                #print(row)
+                #print("x:{},y:{}  j{},i{}  wx{} wy{}".format(x,y,j,i,w_x,w_y))
+
+                mesh[y + i, x + j] -= w_y*w_x
+        
+        count = count + 1
+       
+        if count%100 == 0:
+            print(count)
+
+
+
+     #Determine the starting time of a partition
+
+     #print("Start added to dataset \n {}".format(dataset))
+
+     ##perform thresholding
+     #dataset['start'] = np.ceil(dataset['start'].div(hscans))
+     ##dataset['start'] = np.ceil(dataset['start'])    
+ 
+     #dataset['frequency'] = np.ceil(dataset['frequency'].subtract(indent).div(vscans))
+     ##dataset['frequency'] = np.ceil(dataset['frequency'])
+ 
+     #dataset['bandwidth'] = np.ceil(dataset['bandwidth'].div(vscans))
+     ##dataset['bandwidth'] = np.ceil(dataset['bandwidth'])
+ 
+     #dataset['timescale'] = np.ceil(dataset['timescale'].div(hscans))
+     ##dataset['timescale'] = np.ceil(dataset['timescale'])
+
+
+     #dataset = dataset.sort_values(['frequency','start'], ascending=True)
+
+     #print("Thresholded dataset \n {}".format(dataset))
+
+     #dataset_g = dataset.groupby(['start','frequency','timescale','bandwidth']).size().reset_index().rename(columns={0:'count'})
+
+     #print(dataset_g)
+
+     ##dataset = dataset.sort_values(['frequency','start'], ascending=True).reset_index()
+     
+     ##print("Sorted by frequency \n {}".format(dataset))
+     ##Grouping must be the last operation, otherwise numpy functions will not work correctly
+
+
+
+     ##row:idx,start,frequency,timescale,bandwidth,count
+     #for row in dataset_g.itertuples():
+        
+     #   for i in range(np.int(row[3])):
+     #       for j in range(np.int(row[4])):
+     #           mesh[np.int(row[1]) + i - 1, np.int(row[2]) + j - 1] += np.int(row[5])
+     #   count += 1
+
+     #   if count%10000 == 0:
+     #       print(count)
+
+    #drop lastrow
+     #for i in range(vslices):
+     #   mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - vscans)*-1
+     fig = plt.figure()
+     ax = fig.add_subplot(1,1,1) 
+     
+     for spine in ['left','right','top','bottom']:
+        ax.spines[spine].set_color('k')
+ 
+     ax.tick_params(which = 'major', width=1, length=3, color='k')
+     ax.tick_params(which = 'minor', width=.5, length=1, color='k')
+         
+     ax.yaxis.set_ticks_position('left')
+     ax.xaxis.set_ticks_position('bottom')
+
+        #plt.subplot(111)
+     meshm = np.ma.masked_where(mesh < 1, mesh)
+     m = ax.pcolormesh(meshm, vmin=1, vmax=np.amax(mesh), cmap='inferno_r')
+     
+     ax.axis([0,vslices,0,hslices])
+     ax.set_xticks(np.linspace(1,vslices,5))#, 26316, 52632])
+
+     start = (c_freq - (c_bandwidth*.4))/1e6
+     stop = (c_freq + (c_bandwidth*.4))/1e6
+     ax.set_xticklabels(np.linspace(start,stop,5))
+     #ax.set_ticks(True)
+     
+     
+     plt.colorbar(m,ax=ax)
+     #plt.grid(True, which='major', axis='both', linestyle='-', color='none')
+     
+     ax.set_title('Spectrum Occupancy')
+     ax.set_xlabel('Frequency (MHz)')
+     ax.set_ylabel('Time (s)')
+
+     #ax.set_yticks(np.linspace(0,hidx,num=12))
+     #ax.set_yticklabels(np.around(np.linspace(0,hidx,num=12)*.005*hscans,decimals=2))
+
+     plt.tight_layout()
+     plt.show()
+
+
+
 #new improved spicy hexbin with distributions :D
 def hexbin(filename):
      print('Now running hexbin plot, ensure a partitioned dataset is selected')
@@ -325,10 +509,11 @@ def hexbin(filename):
      #ax.set_xscale('log')
      #plt.show()
 
+     #create figure hook, assign figure size and adjust padding around borders
      fig = plt.figure(figsize=(22,14))
      fig.subplots_adjust(left=0.06, bottom=0.06, right=.98, top=.98)
 
-     #arrange the various axes nicely
+     #arrange the various axes nicely using gridspec
      gs=gridspec.GridSpec(5,6)
      gs.update(wspace = 0.03, hspace= 0.03)
 
@@ -344,22 +529,25 @@ def hexbin(filename):
      cbmap = ax1.hexbin(dataset['bandwidth'], dataset['timescale'], mincnt=1, xscale='log', yscale='log', cmap='inferno', norm=matplotlib.colors.LogNorm(), reduce_C_function=np.sum)
      ax1.axis([xmin, xmax, ymin, ymax])
      
+     #populate the appropriate spines
      for spine in ['left','bottom']:
         ax1.spines[spine].set_color('k')
         
      ax2.spines['bottom'].set_color('k')
      ax3.spines['left'].set_color('k')
      
-        
+     #set tick sizes, colours and lengths
      ax1.tick_params(which = 'major', width=1, length=4, color='k')
      ax1.tick_params(which = 'minor', width=1, length=2, color='k')
 
+     #manual xtick placement
      ax1.set_xticks([66, 132, 263, 526, 1316, 2632, 5263, 13158])#, 26316])#, 52632])
      ax1.set_xticklabels([r'12.5kHz', r'25kHz', r'50kHz', r'100kHz', r'250kHz', r'500kHz', r'1MHz', r'2.5MHz', r'5MHz', r'10MHz'])
      ax1.xaxis.set_ticks_position('bottom')
      ax1.set_xlabel('Bandwidth', fontsize=24)
      
-     ax1.set_yticks([10,20,50,100,200,500,2000,6000,12000,60000,180000,720000])
+     #manual ytick placement
+     ax1.set_yticks([10,19,48,95,190,477,1907,5722,11444,57220,171661,686646])
      ax1.set_yticklabels([r'50ms',r'100ms',r'250ms',r'500ms',r'1s',r'2.5s',r'10s',r'30s',r'1m',r'5m',r'15m',r'1h'])
      ax1.yaxis.set_ticks_position('left')
      ax1.set_ylabel('Duration', fontsize=24)
@@ -377,14 +565,7 @@ def hexbin(filename):
      #cb.set_ticks([np.log10(1),np.log10(10),np.log10(50),np.log10(100),np.log10(500)])
      #cb.set_ticklabels([1,10,50,100,500])
 
-     #cb = plt.colorbar()
-    
-     
-     #plt.subplot(133)
      #Timescale histogram     
-#     ax2.hist(np.log10(dataset['timescale']), log=True, bins=100, orientation='horizontal', color='k')
-#     ax2.set_ylim(1,np.log10(ymax))
-
      ax2hist = ax2.hist(dataset['timescale'], bins=np.logspace(np.log10(ymin), np.log10(ymax), num=100), orientation='horizontal', log=True, color='k')
      ax2.set_yscale('log')
      ax2.set_xlim(1,np.power(10,np.ceil(np.log10(np.amax(ax2hist[0])))))
@@ -396,12 +577,7 @@ def hexbin(filename):
      
      ax2.tick_params(axis='both', labelsize=14)
 
-     #plt.subplot(312)
-     #Bandwidth histogram
-#     ax3.hist(np.log10(dataset['bandwidth']), log=True, bins=150, color='k')
-#     ax3.axis([np.log10(xmin), np.log10(xmax), 1, ymax])
-
-    #Better bandwidth histogram
+     #Better bandwidth histogram
      ax3.hist(dataset['bandwidth'], bins=np.logspace(np.log10(xmin), np.log10(xmax), num=200), log=True, color='k')
      ax3.set_xscale('log')
      ax3.set_xlim(xmin, xmax)
@@ -415,6 +591,7 @@ def hexbin(filename):
      ax3.tick_params(axis='both', labelsize=14)
 
      plt.rc('axes', labelsize=20)   
+     #dpi=plt.gcf().dpi is CRITICAL for saving an image that looks identical to the one displayed in plt.show()
      plt.savefig('Basic.png', dpi=plt.gcf().dpi)
      plt.show()
 
@@ -673,41 +850,75 @@ def analyse(filename,test):
             print('tssum printout')
             print(tssum)
 
+            numops = bwtsframe.groupby(['timescale']).size().reset_index().rename(columns={0:'count'})
+
+            print(numops)
+            
+
             tsmax = np.max(bwtsframe_red['timescale'])
             xmax = np.power(10,np.ceil(np.log10(tsmax)))
 
             ts_cumsum = np.cumsum(tssum['ws_count'][::-1])[::-1] 
 
+            ymax = np.power(10,np.ceil(np.log10(np.max(ts_cumsum))))
+
+            print('Partitioned Whitespace: {}'.format(ts_cumsum[0]))
+
+            delta = np.diff(ts_cumsum)
+            delta = delta*-1
+            print(delta)
+
             fig = plt.figure()
-            ax = fig.add_subplot(2,1,1)
-            ax2 = fig.add_subplot(2,1,2)
-            #ax.scatter(bwsum['bandwidth'],bwsum['ws_count'],edgecolor='')
-            ax.scatter(tssum['timescale'],tssum['ws_count'],edgecolor='')
+            ax = fig.add_subplot(3,1,1)
+            ax2 = fig.add_subplot(3,1,2)
+            #ax.scatter(bwsum['bandwidth'],bwsum['ws_count'],edgecolor='')            
+            ax.scatter(numops['timescale'],numops['count'],edgecolor='')
             ax2.scatter(tssum['timescale'],ts_cumsum,edgecolor='')
+            ax2.scatter(tssum['timescale'],tssum['ws_count'],edgecolor='',color='r')
             #ax2.scatter(tssum['timescale'],ts_cumsum,edgecolor='')
 
             ax.set_yscale('log')
             ax.set_xscale('log')
             ax.set_xlim(1,xmax)
-            #ax.set_ylim(1,1e10)
+            ax.set_ylim(.1,1e4)
         
-            #ax2.set_yscale('log')
+            ax2.set_yscale('log')
             ax2.set_xscale('log')
             ax2.set_xlim(1,xmax)
-            #ax2.set_ylim(1e6,1e11)
+            ax2.set_ylim(1,ymax)
 
             #ax.set_title('Whitespace Distribution vs Bandwidth')
             #ax.set_xlabel('Bandwidth in Bins (190Hz/bin)')
             #ax.set_ylabel('Unique Whitespace')
             
-            ax.set_title('Whitespace Distribution vs Timescale')
+            ax.set_title('Whitespace Observation Count vs Timescale')
             ax.set_xlabel('Timescale (5.3ms/unit)')
-            ax.set_ylabel('Unique Whitespace')
+            ax.set_ylabel('Observation Count')
 
             ax2.set_title('Cumulative Whitespace vs Timescale')
             ax2.set_xlabel('Timescale (5.3ms/unit)')
             ax2.set_ylabel('Unique Whitespace')
 
+            z = np.polyfit(tssum['timescale'],tssum['ws_count'], 1)
+            p = np.poly1d(z)
+
+            ax2.plot(tssum['timescale'],p(tssum['timescale']), 'k--')
+
+            z2 = np.polyfit(np.log(tssum['timescale']),tssum['ws_count'], 2)
+            p2 = np.poly1d(z2)
+            ax2.plot(tssum['timescale'],p2(np.log(tssum['timescale'])), 'g--')
+
+            ax3 = fig.add_subplot(3,1,3)
+
+            perh_cumsum = (ts_cumsum/np.max(ts_cumsum)) *100
+            ax3.scatter(tssum['timescale'],perh_cumsum, edgecolor='')
+            ax3.set_xscale('log')
+            ax3.set_xlim(1,xmax)
+
+            z3 = np.polyfit(np.log(tssum['timescale']),perh_cumsum, 3)
+            p3 = np.poly1d(z3)
+
+            ax3.plot(tssum['timescale'],p3(np.log(tssum['timescale'])), 'k--')
             ## window count plots - number of unique window observations
             plt.show()
 
