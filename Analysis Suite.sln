@@ -5,6 +5,8 @@ VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Analysis Suite", "Analysis Suite.pyproj", "{F132E7D8-0EA0-4B19-82FA-61E4BB498CCE}"
 EndProject
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Quickplot", "..\Scratchspace\Quickplot.pyproj", "{731F3FA3-57EC-4891-9A08-C877A8F8EE65}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -13,6 +15,8 @@ Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{F132E7D8-0EA0-4B19-82FA-61E4BB498CCE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F132E7D8-0EA0-4B19-82FA-61E4BB498CCE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{731F3FA3-57EC-4891-9A08-C877A8F8EE65}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{731F3FA3-57EC-4891-9A08-C877A8F8EE65}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

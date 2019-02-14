@@ -1,3 +1,4 @@
+import prediction as pred
 import tkinter as tk
 from tkinter import filedialog
 from itertools import islice
@@ -18,7 +19,7 @@ import mmap
 import os
 
 __author__ = 'Pierce Rixon'
-select = 1
+select = 1 #up to 5
 
 null = None
 
@@ -48,16 +49,23 @@ def main():
         config = cfg.read().splitlines()
 
     #occupancy(config)
-    occupancy_v2(config)
-    #occupancy_csv(config) #NOT WORKING FOR LARGE DATASETS 100MB+
+    #occupancy_v2(config)
+    occupancy_csv(config) #NOT WORKING FOR LARGE DATASETS 100MB+
     #dutycycle(config)
+    #PSD(config)
 
     #print('Select window file')
     filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")]) #('Window_dump.csv')    
+    
+    #pred.pred(filename)
+
     #hexbin(filename)
     #analyse(filename,select) #For analysis package
     #dev_sim(filename) #For device simulator
     #legacy_sns(filename)
+    #legacy(filename)
+
+
 
 def metadata():
     
@@ -101,6 +109,60 @@ def metadata():
                 print('File does not have Total Whitespace message')
             file.close()
 
+def PSD(config):
+    print('Now running PSD plot, ensure a PSD dataset is selected')
+    filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")])
+    dataset = pd.read_csv(filename, header=0)
+
+    c_freq = np.float(config[2])
+    #config[3] has the filter bandwidth, which is not active for a WBX daughterboard, as its locked to 40MHz
+    c_bandwidth = np.float(config[4])
+
+    print(dataset)
+
+    d_len = dataset['avg'].size
+
+    print(d_len)
+
+    freq = np.linspace(0,d_len-1,d_len)
+    
+    fig = plt.figure(figsize=(22,10))
+    fig.subplots_adjust(left=0.08, bottom=0.12, right=.97, top=.95)
+    ax = fig.add_subplot(1,1,1) 
+
+    for spine in ['left','right','top','bottom']:
+       ax.spines[spine].set_color('k')
+ 
+    ax.tick_params(which = 'major', width=1, length=3, color='k')
+    ax.tick_params(which = 'minor', width=.5, length=1, color='k')
+         
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+    
+    start = (c_freq - (c_bandwidth*.5))/1e6
+    stop = (c_freq + (c_bandwidth*.5))/1e6
+    ax.set_xticklabels(np.linspace(start,stop,11))
+    ax.set_xticks(np.linspace(0,d_len-1,11))
+    ax.set_xlim(0,d_len-1)
+    ax.set_ylim(-130,-50)
+
+    #ax.set_title('Power Spectrum Density', fontsize=36)
+    ax.set_xlabel('Frequency (MHz)', fontsize=(36+6))
+    ax.set_ylabel('Power (dBm)', fontsize=(36+6))
+    ax.tick_params(axis='both', labelsize=(26+6))
+
+    ax.plot(freq,dataset['max'], color='r', label="Max")
+    ax.plot(freq,dataset['avg'], color='k', label="Avg")
+    ax.plot(freq,dataset['min'], color='b', label="Min")
+
+    ax.axvline(x=d_len*.1, color='k', linestyle='--')
+    ax.axvline(x=d_len*.9, color='k', linestyle='--')
+
+    handles, labels = ax.get_legend_handles_labels()
+
+    ax.legend(handles,labels,fontsize=24)
+    plt.rc('axes', labelsize=(36+6))   
+    plt.show()  
 
     # here we are plotting stacked slices on top of eachother, plotting frequency vs time (in frames)
 def occupancy_csv(config):
@@ -142,7 +204,7 @@ def occupancy_csv(config):
         if row[4] > (hidx+1)*hscans:
 
             #zero array
-            print(hidx)
+            if hidx%100 == 0 : print(hidx)
             for i in range(vslices):
                 mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - (vscans-1))*-1
             hidx = hidx + 1
@@ -171,14 +233,14 @@ def occupancy_csv(config):
 
         #plt.subplot(111)
      meshm = np.ma.masked_where(mesh < 1, mesh)
-     m = ax.pcolormesh(meshm, vmin=1, vmax=np.amax(mesh), cmap='inferno_r')
+     m = ax.pcolormesh(meshm, vmin=1, vmax=np.amax(mesh), cmap='gnuplot_r')
      
      ax.axis([0,vslices,0,hidx])
      ax.set_xticks(np.linspace(1,vslices,5))#, 26316, 52632])
 
      start = (c_freq - (c_bandwidth*.4))/1e6
      stop = (c_freq + (c_bandwidth*.4))/1e6
-     ax.set_xticklabels(np.linspace(start,stop,5))
+     ax.set_xticklabels(np.linspace(start,stop,5)/60)
      #ax.set_ticks(True)
      
      
@@ -187,7 +249,7 @@ def occupancy_csv(config):
      
      ax.set_title('Spectrum Occupancy')
      ax.set_xlabel('Frequency (MHz)')
-     ax.set_ylabel('Time (s)')
+     ax.set_ylabel('Time (min)')
 
      ax.set_yticks(np.linspace(0,hidx,num=12))
      ax.set_yticklabels(np.around(np.linspace(0,hidx,num=12)*.005*hscans,decimals=2))
@@ -228,7 +290,7 @@ def occupancy(config):
         if row[5] > (hidx+1)*hscans:
 
             #zero array
-            print(hidx)
+            if hidx%100 == 0: print(hidx)
             for i in range(vslices):
                 mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - (vscans-1))*-1
             hidx = hidx + 1
@@ -243,8 +305,9 @@ def occupancy(config):
     #drop lastrow
      #for i in range(vslices):
      #   mesh[hidx,i] = (np.sum(freq_arry[i*vscans:((i+1)*vscans - 1)])/hscans - vscans)*-1
-     fig = plt.figure()
-     ax = fig.add_subplot(1,1,1) 
+     fig = plt.figure(figsize=(22,10))
+     fig.subplots_adjust(left=0.07, bottom=0.12, right=1.08, top=.97)
+     ax = fig.add_subplot(1,1,1)     
      
      for spine in ['left','right','top','bottom']:
         ax.spines[spine].set_color('k')
@@ -267,18 +330,23 @@ def occupancy(config):
      ax.set_xticklabels(np.linspace(start,stop,5))
      #ax.set_ticks(True)
      
-     
-     plt.colorbar(m,ax=ax)
+     cb = plt.colorbar(m,ax=ax)
+     #labelstr = 'Observation Density (p/'+str(hscans*vscans)+')'
+     labelstr = 'Observation Density'
+     cb.set_label(labelstr, fontsize=(26+6))
+     cb.ax.tick_params(labelsize=(20+6))
      #plt.grid(True, which='major', axis='both', linestyle='-', color='none')
      
-     ax.set_title('Spectrum Occupancy')
-     ax.set_xlabel('Frequency (MHz)')
-     ax.set_ylabel('Time (s)')
+     #ax.set_title('Spectrum Occupancy',fontsize=)
+     ax.set_xlabel('Frequency (MHz)', fontsize=(36+6))
+     ax.set_ylabel('Time (min)', fontsize=(36+6))
+     ax.tick_params(axis='both', labelsize=(26+6))
 
-     ax.set_yticks(np.linspace(0,hidx,num=12))
-     ax.set_yticklabels(np.around(np.linspace(0,hidx,num=12)*.005*hscans,decimals=2))
+     ax.set_yticks(np.linspace(0,hidx,num=11))
+     #ax.set_yticklabels(np.around(np.linspace(0,hidx,num=12)*.005*hscans/60,decimals=1))
+     ax.set_yticklabels(np.around(np.linspace(0,5,num=11),decimals=1))
 
-     plt.tight_layout()
+     plt.rc('axes', labelsize=(32+6)) 
      plt.show()
 
 def occupancy_v2(config):
@@ -438,7 +506,7 @@ def occupancy_v2(config):
 
         #plt.subplot(111)
      meshm = np.ma.masked_where(mesh < 1, mesh)
-     m = ax.pcolormesh(meshm, vmin=1, vmax=np.amax(mesh), cmap='inferno_r')
+     m = ax.pcolormesh(meshm, vmin=1, vmax=np.amax(mesh), cmap='gnuplot_r')
      
      ax.axis([0,vslices,0,hslices])
      ax.set_xticks(np.linspace(1,vslices,5))#, 26316, 52632])
@@ -489,7 +557,8 @@ def hexbin(filename):
 #     xmin = 1  #Just for the BW=1 TS=1 dataset
 #     ymin = 1
      xmin = 50
-     ymax = np.maximum(1e6,np.power(10,np.ceil(np.log10(np.max(dataset['timescale'])))))
+     #ymax = np.maximum(1e6,np.power(10,np.ceil(np.log10(np.max(dataset['timescale'])))))
+     ymax = np.power(10,np.ceil(np.log10(np.max(dataset['timescale'])))) #for 5min segment
      ymin = np.min(dataset['timescale'])
 
      ##cheekybonusbits
@@ -511,7 +580,7 @@ def hexbin(filename):
 
      #create figure hook, assign figure size and adjust padding around borders
      fig = plt.figure(figsize=(22,14))
-     fig.subplots_adjust(left=0.06, bottom=0.06, right=.98, top=.98)
+     fig.subplots_adjust(left=0.1, bottom=0.09, right=.98, top=.98)
 
      #arrange the various axes nicely using gridspec
      gs=gridspec.GridSpec(5,6)
@@ -544,14 +613,14 @@ def hexbin(filename):
      ax1.set_xticks([66, 132, 263, 526, 1316, 2632, 5263, 13158])#, 26316])#, 52632])
      ax1.set_xticklabels([r'12.5kHz', r'25kHz', r'50kHz', r'100kHz', r'250kHz', r'500kHz', r'1MHz', r'2.5MHz', r'5MHz', r'10MHz'])
      ax1.xaxis.set_ticks_position('bottom')
-     ax1.set_xlabel('Bandwidth', fontsize=24)
+     ax1.set_xlabel('Bandwidth', fontsize=(24+18))
      
      #manual ytick placement
-     ax1.set_yticks([10,19,48,95,190,477,1907,5722,11444,57220,171661,686646])
+     ax1.set_yticks([10,19,48,95,190,477,1907,5722,11444,57220])#,171661,686646])
      ax1.set_yticklabels([r'50ms',r'100ms',r'250ms',r'500ms',r'1s',r'2.5s',r'10s',r'30s',r'1m',r'5m',r'15m',r'1h'])
      ax1.yaxis.set_ticks_position('left')
-     ax1.set_ylabel('Duration', fontsize=24)
-     ax1.tick_params(axis='both', labelsize=16)
+     ax1.set_ylabel('Duration', fontsize=(24+18))
+     ax1.tick_params(axis='both', labelsize=(16+18))
      
      #ax1.set_title("With a log color scale")
      #cbax = mplcb.make_axes_gridspec(ax4)
@@ -559,9 +628,9 @@ def hexbin(filename):
      cb = plt.colorbar(cbmap,cax=cbax, orientation='horizontal')
      cb.outline.set_visible(True)
      cb.outline.set_edgecolor('black')   
-     cb.set_label('Observation Density', fontsize=14)
+     cb.set_label('Observation Density', fontsize=(14+12))
      cbax.xaxis.set_label_position('top')
-     cb.ax.tick_params(labelsize=14)
+     cb.ax.tick_params(labelsize=(14+12))
      #cb.set_ticks([np.log10(1),np.log10(10),np.log10(50),np.log10(100),np.log10(500)])
      #cb.set_ticklabels([1,10,50,100,500])
 
@@ -575,7 +644,7 @@ def hexbin(filename):
      ax2.tick_params(which = 'major', width=1, length=4, color='k')
      ax2.tick_params(which = 'minor', width=1, length=2, color='k')
      
-     ax2.tick_params(axis='both', labelsize=14)
+     ax2.tick_params(axis='both', labelsize=(14+18))
 
      #Better bandwidth histogram
      ax3.hist(dataset['bandwidth'], bins=np.logspace(np.log10(xmin), np.log10(xmax), num=200), log=True, color='k')
@@ -588,18 +657,18 @@ def hexbin(filename):
      ax3.tick_params(which = 'major', width=1, length=4, color='k')
      ax3.tick_params(which = 'minor', width=1, length=2, color='k')
 
-     ax3.tick_params(axis='both', labelsize=14)
+     ax3.tick_params(axis='both', labelsize=(14+18))
 
-     plt.rc('axes', labelsize=20)   
+     plt.rc('axes', labelsize=(20+18))   
      #dpi=plt.gcf().dpi is CRITICAL for saving an image that looks identical to the one displayed in plt.show()
-     plt.savefig('Basic.png', dpi=plt.gcf().dpi)
+     #plt.savefig('Basic.png', dpi=plt.gcf().dpi)
      plt.show()
 
      # here we are plotting totals of duration per frequency as a percentage of total duration
 def dutycycle(filename):
      print('Now running dutycycle plot, ensure a duration dataset is selected')
      filename = filedialog.askopenfilename(filetypes = [("csv files","*.csv")])
-     dataset = pd.read_csv(filename, header=0)
+     dataset = pd.read_csv(filename, header=0, dtype=np.int)
  
      resolution = 131072 #this will have to be modified depending on how the FFT is computed
 

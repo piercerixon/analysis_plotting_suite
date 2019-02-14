@@ -23,6 +23,9 @@
   <ItemGroup>
     <Compile Include="Analysis_Suite.py" />
     <Compile Include="PlotPy3.4.py" />
+    <Compile Include="prediction.py">
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="{9a7a9026-48c1-4688-9d5d-e5699d47d074}\3.5" />
